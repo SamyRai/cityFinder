@@ -1,0 +1,11 @@
+.idea
+allCountries.zip
+allCountries.txt
+cities.bin
+rtree.gob
+.DS_Store
+
+# Go related
+
+go.sum
+
