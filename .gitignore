@@ -1,8 +1,6 @@
 .idea
-allCountries.zip
-allCountries.txt
-cities.bin
-rtree.gob
+datasets/
+
 .DS_Store
 
 # Go related

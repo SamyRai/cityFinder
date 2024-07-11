@@ -1,17 +1,13 @@
 package main
 
 import (
-	"cityFinder/binary"
 	"cityFinder/city"
-	"cityFinder/csv"
-	"cityFinder/rtree"
+	"cityFinder/dataloader"
+	"cityFinder/finder"
 	"fmt"
 	"log"
-	"os"
 	"sync"
 	"time"
-
-	"github.com/dhconnelly/rtreego"
 )
 
 type Result struct {
@@ -47,106 +43,49 @@ var testLocations = []struct {
 
 func main() {
 	var cities []city.SpatialCity
-	var rtreeObj, loadedRTree *rtreego.Rtree
 	var err error
-	binaryLocation := "cities.bin"
-	rtreeLocation := "rtree.gob"
-	textLocation := "allCountries.txt"
+	csvLocation := "datasets/allCountries.csv"
+	postalCodeLocation := "datasets/zipCodes.csv"
 
 	var wg sync.WaitGroup
-	var rtreeMutex sync.Mutex
-	resultsChan := make(chan Result, len(testLocations)*3+6)
+	resultsChan := make(chan Result, len(testLocations)*5)
 
-	log.Printf("Loading the CSV data from %s", textLocation)
-	wg.Add(1)
-	go MeasureTime(&wg, resultsChan, "Loading and building R-tree from CSV", func() *city.City {
-		cities, err = csv.LoadGeoNamesCSV(textLocation)
-		if err != nil {
-			log.Fatalf("Failed to load GeoNames data from CSV: %v", err)
-		}
-		rtreeMutex.Lock()
-		rtreeObj = rtree.BuildRTree(cities)
-		rtreeMutex.Unlock()
-		return nil
-	})
-
-	for _, loc := range testLocations {
-		wg.Add(1)
-		go MeasureTime(&wg, resultsChan, fmt.Sprintf("Finding nearest city using CSV data for %s", loc.Expected), func() *city.City {
-			rtreeMutex.Lock()
-			defer rtreeMutex.Unlock()
-			if rtreeObj != nil {
-				return rtree.FindNearestCity(loc.Lat, loc.Lon, rtreeObj)
-			}
-			return nil
-		})
+	log.Printf("Loading the CSV data from %s", csvLocation)
+	cities, err = dataloader.LoadGeoNamesCSV(csvLocation)
+	if err != nil {
+		log.Fatalf("Failed to load GeoNames data from CSV: %v", err)
 	}
 
-	log.Printf("Saving the binary data to %s", binaryLocation)
-	wg.Add(1)
-	go MeasureTime(&wg, resultsChan, "Saving the binary from text", func() *city.City {
-		err := binary.SaveBinary(binaryLocation, cities)
-		if err != nil {
-			log.Fatalf("Failed to save binary data: %v", err)
-		}
-		return nil
-	})
-
-	log.Printf("Loading the binary data from %s", binaryLocation)
-	wg.Add(1)
-	go MeasureTime(&wg, resultsChan, "Loading and building R-tree from binary", func() *city.City {
-		cities, err = binary.LoadBinary(binaryLocation)
-		if err != nil {
-			log.Fatalf("Failed to load binary data: %v", err)
-		}
-		rtreeMutex.Lock()
-		rtreeObj = rtree.BuildRTree(cities)
-		rtreeMutex.Unlock()
-		return nil
-	})
-
-	for _, loc := range testLocations {
-		wg.Add(1)
-		go MeasureTime(&wg, resultsChan, fmt.Sprintf("Finding nearest city using binary data for %s", loc.Expected), func() *city.City {
-			rtreeMutex.Lock()
-			defer rtreeMutex.Unlock()
-			if rtreeObj != nil {
-				return rtree.FindNearestCity(loc.Lat, loc.Lon, rtreeObj)
-			}
-			return nil
-		})
+	log.Printf("Loading the Postal Code data from %s", postalCodeLocation)
+	postalCodes, err := dataloader.LoadPostalCodes(postalCodeLocation)
+	if err != nil {
+		log.Fatalf("Failed to load Postal Code data: %v", err)
 	}
 
-	if _, err := os.Stat(rtreeLocation); os.IsNotExist(err) {
-		log.Printf("Saving the R-tree data to %s", rtreeLocation)
-		wg.Add(1)
-		go MeasureTime(&wg, resultsChan, "Saving the R-tree", func() *city.City {
-			rtreeMutex.Lock()
-			defer rtreeMutex.Unlock()
-			err := rtree.SaveRTree(rtreeLocation, rtreeObj)
-			if err != nil {
-				log.Fatalf("Failed to save R-tree data: %v", err)
-			}
-			return nil
-		})
-	} else {
-		log.Printf("Loading the R-tree data from %s", rtreeLocation)
-		wg.Add(1)
-		go MeasureTime(&wg, resultsChan, "Loading the R-tree", func() *city.City {
-			loadedRTree, err = rtree.LoadRTree(rtreeLocation)
-			if err != nil {
-				log.Fatalf("Failed to load R-tree data: %v", err)
-			}
-			return nil
-		})
+	// Initialize all finders
+	finders := map[string]finder.Finder{
+		"R-tree":   finder.BuildRTree(cities, postalCodes),
+		"Geohash":  finder.BuildGeoHashIndex(cities, 12, postalCodes),
+		"S2":       finder.BuildS2Index(cities, postalCodes),
+		"k-d Tree": finder.BuildKDTree(cities, postalCodes),
+	}
 
+	for name, f := range finders {
 		for _, loc := range testLocations {
 			wg.Add(1)
-			go MeasureTime(&wg, resultsChan, fmt.Sprintf("Finding nearest city using pre-built R-tree data for %s", loc.Expected), func() *city.City {
-				if loadedRTree != nil {
-					return rtree.FindNearestCity(loc.Lat, loc.Lon, loadedRTree)
-				}
-				return nil
+			go MeasureTime(&wg, resultsChan, fmt.Sprintf("Finding nearest city using %s for %s", name, loc.Expected), func() *city.City {
+				return f.FindNearestCity(loc.Lat, loc.Lon)
+			})
+		}
+	}
+
+	// Example postal code search
+	postalCodesToTest := []string{"10001", "90210", "60601"} // Example postal codes
+	for name, f := range finders {
+		for _, postalCode := range postalCodesToTest {
+			wg.Add(1)
+			go MeasureTime(&wg, resultsChan, fmt.Sprintf("Finding nearest city using %s for postal code %s", name, postalCode), func() *city.City {
+				return f.FindCityByPostalCode(postalCode)
 			})
 		}
 	}

@@ -1,4 +1,4 @@
-package csv
+package dataloader
 
 import (
 	"bufio"
@@ -27,7 +27,6 @@ func LoadGeoNamesCSV(filepath string) ([]city.SpatialCity, error) {
 
 	var cities []city.SpatialCity
 	scanner = bufio.NewScanner(file)
-	currentLine := 0
 	bar := pb.Full.Start(lineCount)
 	defer bar.Finish()
 
@@ -59,8 +58,6 @@ func LoadGeoNamesCSV(filepath string) ([]city.SpatialCity, error) {
 		spatialCity := city.SpatialCity{City: cityObj, Rect: rect}
 
 		cities = append(cities, spatialCity)
-
-		currentLine++
 		bar.Increment()
 	}
 
