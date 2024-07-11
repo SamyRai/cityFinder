@@ -1,8 +1,8 @@
 package finder
 
 import (
-	"cityFinder/city"
-	"cityFinder/dataloader"
+	"github.com/SamyRai/cityFinder/city"
+	"github.com/SamyRai/cityFinder/dataloader"
 	"github.com/dhconnelly/rtreego"
 	"github.com/mmcloughlin/geohash"
 )
@@ -38,6 +38,9 @@ func (f *GeoHashFinder) FindNearestCity(lat, lon float64) *city.City {
 				}
 			}
 		}
+	}
+	if closest.City.Name == "" {
+		return nil
 	}
 	return &closest.City
 }

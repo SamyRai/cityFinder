@@ -1,8 +1,8 @@
 package finder
 
 import (
-	"cityFinder/city"
-	"cityFinder/dataloader"
+	"github.com/SamyRai/cityFinder/city"
+	"github.com/SamyRai/cityFinder/dataloader"
 	"github.com/kyroy/kdtree"
 	"math"
 )
@@ -10,6 +10,7 @@ import (
 type KDTreeFinder struct {
 	tree       *kdtree.KDTree
 	postalCode map[string]dataloader.PostalCodeEntry
+	index      map[string]*city.City
 }
 
 type Point struct {
@@ -37,14 +38,16 @@ func (p Point) Distance(q kdtree.Point) float64 {
 
 func BuildKDTree(cities []city.SpatialCity, postalCodes map[string]dataloader.PostalCodeEntry) *KDTreeFinder {
 	points := make([]kdtree.Point, len(cities))
+	nameIndex := make(map[string]*city.City)
 	for i, city := range cities {
 		points[i] = Point{
 			Coordinates: []float64{city.Longitude, city.Latitude},
 			City:        &city.City,
 		}
+		nameIndex[city.Name] = &city.City
 	}
 	tree := kdtree.New(points)
-	return &KDTreeFinder{tree: tree, postalCode: postalCodes}
+	return &KDTreeFinder{tree: tree, postalCode: postalCodes, index: nameIndex}
 }
 
 func (f *KDTreeFinder) FindNearestCity(lat, lon float64) *city.City {
@@ -59,7 +62,9 @@ func (f *KDTreeFinder) FindNearestCity(lat, lon float64) *city.City {
 }
 
 func (f *KDTreeFinder) FindCoordinatesByName(name string) *city.City {
-	// Implement this if needed for completeness
+	if city, exists := f.index[name]; exists {
+		return city
+	}
 	return nil
 }
 
