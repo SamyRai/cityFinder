@@ -2,7 +2,7 @@ package dataloader
 
 import (
 	"bufio"
-	"github.com/SamyRai/cityFinder/city"
+	"github.com/SamyRai/cityFinder/lib/city"
 	"os"
 	"strconv"
 	"strings"

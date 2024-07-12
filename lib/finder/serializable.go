@@ -1,7 +1,7 @@
 package finder
 
 import (
-	"github.com/SamyRai/cityFinder/city"
+	"github.com/SamyRai/cityFinder/lib/city"
 )
 
 // FromSpatialCity converts city.SpatialCity to SerializableSpatialCity

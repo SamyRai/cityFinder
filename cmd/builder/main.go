@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/SamyRai/cityFinder/dataloader"
-	"github.com/SamyRai/cityFinder/finder"
+	"github.com/SamyRai/cityFinder/lib/dataloader"
+	"github.com/SamyRai/cityFinder/lib/finder"
 	"log"
 )
 

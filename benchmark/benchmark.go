@@ -2,8 +2,8 @@ package benchmark
 
 import (
 	"fmt"
-	"github.com/SamyRai/cityFinder/city"
-	"github.com/SamyRai/cityFinder/finder"
+	"github.com/SamyRai/cityFinder/lib/city"
+	"github.com/SamyRai/cityFinder/lib/finder"
 	"runtime"
 	"sync"
 	"time"

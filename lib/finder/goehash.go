@@ -1,8 +1,8 @@
 package finder
 
 import (
-	"github.com/SamyRai/cityFinder/city"
-	"github.com/SamyRai/cityFinder/dataloader"
+	"github.com/SamyRai/cityFinder/lib/city"
+	"github.com/SamyRai/cityFinder/lib/dataloader"
 	"github.com/dhconnelly/rtreego"
 	"github.com/mmcloughlin/geohash"
 )

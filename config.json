@@ -1,0 +1,10 @@
+{
+  "datasetsFolder": "datasets",
+  "allCitiesURL": "http://download.geonames.org/export/dump/allCountries.zip",
+  "postalCodesURL": "http://download.geonames.org/export/zip/allCountries.zip",
+  "allCitiesFile": "allCountries.txt",
+  "postalCodesFile": "zipCodes.txt",
+  "allCitiesZip": "allCountries.zip",
+  "postalCodesZip": "zipCodes.zip",
+  "s2IndexFile": "s2index.gob"
+}
