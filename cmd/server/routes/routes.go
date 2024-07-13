@@ -1,14 +1,14 @@
 // cmd/server/routes.go
-package main
+package routes
 
 import (
 	"fmt"
-	"github.com/SamyRai/cityFinder/finder"
+	"github.com/SamyRai/cityFinder/lib/finder"
 	"github.com/gofiber/fiber/v2"
 	"strconv"
 )
 
-func setupRoutes(app *fiber.App, s2Finder *finder.S2Finder) {
+func SetupRoutes(app *fiber.App, s2Finder *finder.S2Finder) {
 	app.Get("/nearest", func(c *fiber.Ctx) error {
 		lat, err := strconv.ParseFloat(c.Query("lat"), 64)
 		if err != nil {
