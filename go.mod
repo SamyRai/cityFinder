@@ -9,7 +9,7 @@ require (
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
 	github.com/kyroy/kdtree v0.0.0-20200419114247-70830f883f1d
 	github.com/mmcloughlin/geohash v0.10.0
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 )
 
 require (
