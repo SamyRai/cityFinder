@@ -1,6 +1,6 @@
 package finder
 
-import "github.com/SamyRai/cityFinder/city"
+import "github.com/SamyRai/cityFinder/lib/city"
 
 // Finder interface that each finder should implement
 type Finder interface {

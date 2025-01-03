@@ -1,4 +1,3 @@
-// cmd/server/main_test.go
 package main
 
 import (
@@ -6,44 +5,62 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"github.com/SamyRai/cityFinder/city"
-	"github.com/SamyRai/cityFinder/finder"
+	"github.com/SamyRai/cityFinder/cmd/server/routes"
+	"github.com/SamyRai/cityFinder/lib/city"
+	"github.com/SamyRai/cityFinder/lib/config"
+	"github.com/SamyRai/cityFinder/lib/finder"
+	"github.com/SamyRai/cityFinder/lib/initializer"
+	"github.com/SamyRai/cityFinder/util"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	"io"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
-// Mock data for testing
-var mockData = loadRealIndex()
-
-func loadRealIndex() *finder.S2Finder {
-	s2indexPath := "./../../datasets/s2index.gob"
-	fmt.Printf("Loading S2 index from %s", s2indexPath)
-
-	s2Finder, err := finder.DeserializeIndex(s2indexPath)
-	if err != nil {
-		panic(err)
-	}
-
-	return s2Finder
+type ServerTestSuite struct {
+	suite.Suite
+	app      *fiber.App
+	s2Finder *finder.S2Finder
+	config   *config.Config
+	rootDir  string
 }
 
-func setupMockApp() *fiber.App {
+func (suite *ServerTestSuite) SetupSuite() {
+	rootDir, err := util.FindProjectRoot()
+	require.NoError(suite.T(), err)
+	suite.rootDir = rootDir
+
+	cfg, err := config.LoadConfig(filepath.Join(rootDir, "config.json"))
+	fmt.Printf("cfg: %+v\n", cfg)
+	fmt.Println("rootDir: ", rootDir)
+	require.NoError(suite.T(), err)
+
+	// Attach the root directory to the datasets folder
+	cfg.DatasetsFolder = rootDir + "/" + cfg.DatasetsFolder
+
+	suite.s2Finder, err = initializer.Initialize(cfg)
+	require.NoError(suite.T(), err)
+	suite.app = suite.setupMockAppTestify()
+}
+
+func (suite *ServerTestSuite) setupMockAppTestify() *fiber.App {
 	app := fiber.New()
-	setupRoutes(app, mockData)
+	routes.SetupRoutes(app, suite.s2Finder)
 	return app
 }
 
-func pickRandomLines(filepath string, count int) ([]string, error) {
+func (suite *ServerTestSuite) pickRandomLines(filepath string, count int) ([]string, error) {
 	file, err := os.Open(filepath)
 	if err != nil {
 		return nil, err
@@ -72,7 +89,7 @@ func pickRandomLines(filepath string, count int) ([]string, error) {
 	return lines[:count], nil
 }
 
-func parseCityLine(line string) (city.City, error) {
+func (suite *ServerTestSuite) parseCityLine(line string) (city.City, error) {
 	fields := strings.Split(line, "\t")
 	if len(fields) < 9 {
 		return city.City{}, fmt.Errorf("invalid line format")
@@ -96,7 +113,7 @@ func parseCityLine(line string) (city.City, error) {
 	}, nil
 }
 
-func pickRandomPostalCodes(filepath string, count int) ([]string, error) {
+func (suite *ServerTestSuite) pickRandomPostalCodes(filepath string, count int) ([]string, error) {
 	file, err := os.Open(filepath)
 	if err != nil {
 		return nil, err
@@ -123,105 +140,93 @@ func pickRandomPostalCodes(filepath string, count int) ([]string, error) {
 	return postalCodes, nil
 }
 
-func TestGetNearestCityRandom(t *testing.T) {
-	app := setupMockApp()
-	lines, err := pickRandomLines("./../../datasets/allCountries.csv", 20)
-	if err != nil {
-		t.Fatalf("Failed to pick random lines: %v", err)
-	}
+func (suite *ServerTestSuite) TestGetNearestCityRandom() {
+	lines, err := suite.pickRandomLines("../../datasets/allCountries.txt", 20)
+	require.NoError(suite.T(), err)
 
 	for _, line := range lines {
-		loc, err := parseCityLine(line)
-		if err != nil {
-			t.Fatalf("Failed to parse city line: %v", err)
-		}
+		loc, err := suite.parseCityLine(line)
+		require.NoError(suite.T(), err)
 
-		t.Run(loc.Name, func(t *testing.T) {
+		suite.Run(loc.Name, func() {
 			req := httptest.NewRequest("GET", "/nearest?lat="+fmt.Sprintf("%f", loc.Latitude)+"&lon="+fmt.Sprintf("%f", loc.Longitude), nil)
-			resp, _ := app.Test(req, -1)
+			resp, _ := suite.app.Test(req, -1)
 
-			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			assert.Equal(suite.T(), http.StatusOK, resp.StatusCode)
 
 			var cityObj city.City
-			err = json.NewDecoder(resp.Body).Decode(&cityObj)
-			assert.NoError(t, err)
-			assert.NotEmpty(t, cityObj.Name)
+			err := json.NewDecoder(resp.Body).Decode(&cityObj)
+			assert.NoError(suite.T(), err)
+			assert.NotEmpty(suite.T(), cityObj.Name)
 		})
 	}
 }
 
-func TestGetCoordinatesByNameRandom(t *testing.T) {
-	app := setupMockApp()
-	lines, err := pickRandomLines("./../../datasets/allCountries.csv", 20)
-	if err != nil {
-		t.Fatalf("Failed to pick random lines: %v", err)
-	}
+func (suite *ServerTestSuite) TestGetCoordinatesByNameRandom() {
+	lines, err := suite.pickRandomLines("../../datasets/allCountries.txt", 20)
+	require.NoError(suite.T(), err)
 
 	for _, line := range lines {
-		loc, err := parseCityLine(line)
-		if err != nil {
-			t.Fatalf("Failed to parse city line: %v", err)
-		}
+		loc, err := suite.parseCityLine(line)
+		require.NoError(suite.T(), err)
 
-		t.Run(loc.Name, func(t *testing.T) {
+		suite.Run(loc.Name, func() {
 			req := httptest.NewRequest("GET", "/coordinates?name="+url.QueryEscape(loc.Name), nil)
-			resp, _ := app.Test(req, -1)
+			resp, _ := suite.app.Test(req, -1)
 
 			if resp.StatusCode != http.StatusOK {
-				t.Logf("City %s not found, skipping...", loc.Name)
+				suite.T().Logf("City %s not found, skipping...", loc.Name)
 				return
 			}
 
-			assert.Equal(t, http.StatusOK, resp.StatusCode)
+			assert.Equal(suite.T(), http.StatusOK, resp.StatusCode)
 
 			var cityObj city.City
-			err = json.NewDecoder(resp.Body).Decode(&cityObj)
-			assert.NoError(t, err)
-			assert.Equal(t, loc.Latitude, cityObj.Latitude)
-			assert.Equal(t, loc.Longitude, cityObj.Longitude)
+			err := json.NewDecoder(resp.Body).Decode(&cityObj)
+			assert.NoError(suite.T(), err)
+			assert.Equal(suite.T(), loc.Latitude, cityObj.Latitude)
+			assert.Equal(suite.T(), loc.Longitude, cityObj.Longitude)
 		})
 	}
 }
 
-func TestGetCityByPostalCodeRandom(t *testing.T) {
-	app := setupMockApp()
-	postalCodes, err := pickRandomPostalCodes("./../../datasets/zipCodes.csv", 20)
-	if err != nil {
-		t.Fatalf("Failed to pick random postal codes: %v", err)
-	}
+func (suite *ServerTestSuite) TestGetCityByPostalCodeRandom() {
+	postalCodes, err := suite.pickRandomPostalCodes("../../datasets/zipCodes.txt", 20)
+	require.NoError(suite.T(), err)
 
 	for _, code := range postalCodes {
-		t.Run(code, func(t *testing.T) {
+		suite.Run(code, func() {
 			req := httptest.NewRequest("GET", "/postalcode?postalcode="+url.QueryEscape(code), nil)
-			resp, _ := app.Test(req, -1)
+			resp, _ := suite.app.Test(req, -1)
 
 			if resp.StatusCode != http.StatusOK {
-				t.Logf("Postal code %s not found, skipping...", code)
+				suite.T().Logf("Postal code %s not found, skipping...", code)
 				return
 			}
-			assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+			assert.Equal(suite.T(), http.StatusOK, resp.StatusCode)
 
 			var cityObj city.City
-			err = json.NewDecoder(resp.Body).Decode(&cityObj)
-			assert.NoError(t, err)
-			assert.NotEmpty(t, cityObj.Name)
+			err := json.NewDecoder(resp.Body).Decode(&cityObj)
+			assert.NoError(suite.T(), err)
+			assert.NotEmpty(suite.T(), cityObj.Name)
 		})
 	}
 }
 
-func TestBadRequest(t *testing.T) {
-	app := setupMockApp()
-
+func (suite *ServerTestSuite) TestBadRequest() {
 	req := httptest.NewRequest("GET", "/nearest?lat=invalid&lon=-74.0060", nil)
-	resp, _ := app.Test(req, -1)
+	resp, _ := suite.app.Test(req, -1)
 
-	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.Equal(suite.T(), http.StatusBadRequest, resp.StatusCode)
 
 	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("Failed to read response body: %v", err)
-	}
+	require.NoError(suite.T(), err)
 	bodyString := string(bodyBytes)
 
-	assert.Equal(t, "Invalid latitude", bodyString)
+	assert.Equal(suite.T(), "Invalid latitude", bodyString)
+}
+
+func TestServerTestSuite(t *testing.T) {
+	suite.Run(t, new(ServerTestSuite))
 }
