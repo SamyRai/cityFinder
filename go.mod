@@ -5,7 +5,7 @@ go 1.22
 require (
 	github.com/cheggaaa/pb/v3 v3.1.6
 	github.com/dhconnelly/rtreego v1.2.0
-	github.com/gofiber/fiber/v2 v2.52.6
+	github.com/gofiber/fiber/v2 v2.52.8
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
 	github.com/kyroy/kdtree v0.0.0-20200419114247-70830f883f1d
 	github.com/mmcloughlin/geohash v0.10.0
