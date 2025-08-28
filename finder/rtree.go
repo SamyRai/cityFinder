@@ -1,72 +1,99 @@
 package finder
 
 import (
+	"encoding/gob"
+	"math"
+	"os"
+
 	"github.com/SamyRai/cityFinder/city"
-	"github.com/SamyRai/cityFinder/dataloader"
-	"github.com/cheggaaa/pb/v3"
 	"github.com/dhconnelly/rtreego"
 )
 
 type RTreeFinder struct {
-	tree       *rtreego.Rtree
-	nameIndex  map[string]*city.City
-	postalCode map[string]dataloader.PostalCodeEntry
+	tree *rtreego.Rtree
+	*CityReader
 }
 
-func BuildRTree(cities []city.SpatialCity, postalCodes map[string]dataloader.PostalCodeEntry) *RTreeFinder {
-	rtree := rtreego.NewTree(2, 25, 50)
-	bar := pb.Full.Start(len(cities))
-	defer bar.Finish()
-	nameIndex := make(map[string]*city.City)
+type RTreeSpatial struct {
+	Rect   SerializableRect
+	CityID int
+}
 
-	for _, city := range cities {
-		rtree.Insert(&city)
-		nameIndex[city.Name] = &city.City
-		bar.Increment()
+func (s *RTreeSpatial) Bounds() rtreego.Rect {
+	r, _ := s.Rect.ToRTreeRect()
+	return r
+}
+
+type RTreeMeta struct {
+	Spatials    []RTreeSpatial
+	CityOffsets []int64
+	CityLengths []int64
+}
+
+func DeserializeRTree(metaPath, citiesPath string) (*RTreeFinder, error) {
+	metaFile, err := os.Open(metaPath)
+	if err != nil {
+		return nil, err
 	}
-	return &RTreeFinder{tree: rtree, nameIndex: nameIndex, postalCode: postalCodes}
+	defer metaFile.Close()
+
+	var meta RTreeMeta
+	if err := gob.NewDecoder(metaFile).Decode(&meta); err != nil {
+		return nil, err
+	}
+
+	tree := rtreego.NewTree(2, 25, 50)
+	for _, s := range meta.Spatials {
+		tree.Insert(&s)
+	}
+
+	cityReader, err := NewCityReader(citiesPath, meta.CityOffsets, meta.CityLengths)
+	if err != nil {
+		return nil, err
+	}
+
+	return &RTreeFinder{
+		tree:       tree,
+		CityReader: cityReader,
+	}, nil
 }
 
-func (f *RTreeFinder) FindNearestCity(lat, lon float64) *city.City {
-	point := rtreego.Point{lon, lat}
-	rect, _ := rtreego.NewRect(point, []float64{0.1, 0.1}) // Start with a larger search area
-	results := f.tree.SearchIntersect(rect)
+func (f *RTreeFinder) FindNearestCity(lat, lon float64) (*city.City, float64, error) {
+	p := rtreego.Point{lon, lat}
+	searchRect, _ := rtreego.NewRect(p, []float64{1.0, 1.0})
+	results := f.tree.SearchIntersect(searchRect)
 
-	minDistance := float64(1<<63 - 1)
+	if len(results) == 0 {
+		return nil, 0, ErrNoResults
+	}
+
 	var nearestCity *city.City
-	rectSize := 0.1
-	for len(results) == 0 { // If no results, expand the search area
-		rect, _ = rtreego.NewRect(point, []float64{rectSize, rectSize})
-		results = f.tree.SearchIntersect(rect)
-		rectSize += 0.1
-		if rectSize > 1 {
-			break
-		}
-	}
+	minDist := math.MaxFloat64
 
 	for _, item := range results {
-		spatialCity := item.(*city.SpatialCity)
-		spatialCityAsPoint := rtreego.Point{spatialCity.Longitude, spatialCity.Latitude}
-		distance := city.EuclideanDistance(point, spatialCityAsPoint)
-		if distance < minDistance {
-			minDistance = distance
-			nearestCity = &spatialCity.City
+		s := item.(*RTreeSpatial)
+		c, err := f.ReadCityAt(s.CityID)
+		if err != nil {
+			continue
+		}
+		dist := city.HaversineDistance(lat, lon, c.Latitude, c.Longitude)
+		if dist < minDist {
+			minDist = dist
+			nearestCity = c
 		}
 	}
-	return nearestCity
+
+	if nearestCity == nil {
+		return nil, 0, ErrNoResults
+	}
+
+	return nearestCity, minDist, nil
 }
 
-func (f *RTreeFinder) FindCoordinatesByName(name string) *city.City {
-	if city, exists := f.nameIndex[name]; exists {
-		return city
-	}
+func (f *RTreeFinder) FindCoordinatesByName(name string) []*city.City {
 	return nil
 }
 
-func (f *RTreeFinder) FindCityByPostalCode(postalCode string) *city.City {
-	entry, exists := f.postalCode[postalCode]
-	if !exists {
-		return nil
-	}
-	return f.FindNearestCity(entry.Latitude, entry.Longitude)
+func (f *RTreeFinder) FindCityByPostalCode(postalCode string) []*city.City {
+	return nil
 }
