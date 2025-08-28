@@ -66,3 +66,52 @@ func LoadGeoNamesCSV(filepath string) ([]city.SpatialCity, error) {
 	}
 	return cities, nil
 }
+
+func StreamGeoNamesCSV(filepath string, cityChan chan<- city.SpatialCity, errChan chan<- error) {
+	file, err := os.Open(filepath)
+	if err != nil {
+		errChan <- err
+		close(cityChan)
+		close(errChan)
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		fields := strings.Split(line, "\t")
+		if len(fields) < 9 {
+			continue
+		}
+
+		lat, err := strconv.ParseFloat(fields[4], 64)
+		if err != nil {
+			continue
+		}
+		lon, err := strconv.ParseFloat(fields[5], 64)
+		if err != nil {
+			continue
+		}
+
+		cityObj := city.City{
+			Latitude:  lat,
+			Longitude: lon,
+			Name:      fields[1],
+			Country:   fields[8],
+		}
+
+		point := rtreego.Point{lon, lat}
+		rect, _ := rtreego.NewRect(point, []float64{0.00001, 0.00001})
+		spatialCity := city.SpatialCity{City: cityObj, Rect: rect}
+
+		cityChan <- spatialCity
+	}
+
+	if err := scanner.Err(); err != nil {
+		errChan <- err
+	}
+
+	close(cityChan)
+	close(errChan)
+}

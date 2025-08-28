@@ -2,112 +2,122 @@ package finder
 
 import (
 	"encoding/gob"
-	"github.com/SamyRai/cityFinder/city"
-	"github.com/SamyRai/cityFinder/dataloader"
-	"github.com/golang/geo/s1"
-	"github.com/golang/geo/s2"
+	"fmt"
 	"math"
 	"os"
+	"sync"
+
+	"github.com/SamyRai/cityFinder/city"
+	"github.com/golang/geo/s1"
+	"github.com/golang/geo/s2"
 )
 
+// S2Meta holds the metadata for the S2 index.
+type S2Meta struct {
+	CityOffsets  []int64
+	CityLengths  []int64
+	PointOffsets []int64
+}
+
+// S2Finder finds the nearest city using the S2 geometry library.
 type S2Finder struct {
-	Index      *s2.RegionCoverer
-	Data       map[s2.CellID]SerializableSpatialCity
-	PostalCode map[string]dataloader.PostalCodeEntry
-	NameIndex  map[string]*city.City
+	index          *s2.ShapeIndex
+	streamingShape *StreamingPointVector
+	*CityReader
+	query *s2.EdgeQuery
+	mu    sync.Mutex
 }
 
-func BuildS2Index(cities []city.SpatialCity, postalCodes map[string]dataloader.PostalCodeEntry) *S2Finder {
-	index := &s2.RegionCoverer{
-		MinLevel: 15,
-		MaxLevel: 15,
-		MaxCells: 8,
+// DeserializeS2 loads an S2Finder from the serialized data files.
+func DeserializeS2(metaPath, citiesPath, pointsPath string) (*S2Finder, error) {
+	metaFile, err := os.Open(metaPath)
+	if err != nil {
+		return nil, err
+	}
+	defer metaFile.Close()
+
+	var meta S2Meta
+	if err := gob.NewDecoder(metaFile).Decode(&meta); err != nil {
+		return nil, err
 	}
 
-	data := make(map[s2.CellID]SerializableSpatialCity)
-	for _, city := range cities {
-		cellID := s2.CellIDFromLatLng(s2.LatLngFromDegrees(city.Latitude, city.Longitude)).Parent(15)
-		data[cellID] = FromSpatialCity(city)
+	streamingShape, err := NewStreamingPointVector(pointsPath, meta.PointOffsets)
+	if err != nil {
+		return nil, err
 	}
 
-	return &S2Finder{Index: index, Data: data, PostalCode: postalCodes}
+	index := s2.NewShapeIndex()
+	index.Add(streamingShape)
+
+	cityReader, err := NewCityReader(citiesPath, meta.CityOffsets, meta.CityLengths)
+	if err != nil {
+		streamingShape.Close()
+		return nil, err
+	}
+
+	opts := s2.NewClosestEdgeQueryOptions().MaxResults(1).IncludeInteriors(false)
+	query := s2.NewClosestEdgeQuery(index, opts)
+
+	return &S2Finder{
+		index:          index,
+		streamingShape: streamingShape,
+		CityReader:     cityReader,
+		query:          query,
+	}, nil
 }
 
-func (f *S2Finder) FindNearestCity(lat, lon float64) *city.City {
-	point := s2.PointFromLatLng(s2.LatLngFromDegrees(lat, lon))
-	cap := s2.CapFromPoint(point).Expanded(s1.Angle(1e-5))
-	covering := f.Index.Covering(cap)
-
-	minDist := float64(math.MaxFloat64)
-	var nearestCity *city.City
-	for _, cellID := range covering {
-		if ssc, ok := f.Data[cellID]; ok {
-			sc, err := ToSpatialCity(ssc)
-			if err != nil {
-				continue
-			}
-			dist := euclideanDistance(lat, lon, sc.Latitude, sc.Longitude)
-			if dist < minDist {
-				minDist = dist
-				nearestCity = &sc.City
-			}
-		}
-	}
-	return nearestCity
+// Close closes the file handles held by the S2Finder.
+func (f *S2Finder) Close() error {
+	f.streamingShape.Close()
+	return f.CityReader.Close()
 }
 
-func euclideanDistance(lat1, lon1, lat2, lon2 float64) float64 {
-	return math.Sqrt(math.Pow(lat1-lat2, 2) + math.Pow(lon1-lon2, 2))
+// FindNearestCity returns the closest city to (lat, lon), along with the
+// great-circle distance (in kilometers). Returns error if none found.
+func (f *S2Finder) FindNearestCity(lat, lon float64) (*city.City, float64, error) {
+	if math.Abs(lat) > 90 || math.Abs(lon) > 180 || math.IsNaN(lat) || math.IsNaN(lon) {
+		return nil, 0, ErrOutOfRange
+	}
+
+	targetPoint := s2.PointFromLatLng(s2.LatLngFromDegrees(lat, lon))
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.query.Reset()
+	target := s2.NewMinDistanceToPointTarget(targetPoint)
+	results := f.query.FindEdges(target)
+	if len(results) == 0 {
+		return nil, 0, ErrNoResults
+	}
+
+	r := results[0]
+	edgeID := r.EdgeID()
+	if edgeID < 0 || int(edgeID) >= len(f.CityReader.offsets) {
+		return nil, 0, ErrIndexOutOfRange
+	}
+
+	angle := r.Distance().Angle()
+	km := angle.Radians() * 6371.0088
+
+	c, err := f.ReadCityAt(int(edgeID))
+	if err != nil {
+		return nil, 0, fmt.Errorf("read city: %w", err)
+	}
+	return c, km, nil
 }
 
-func (f *S2Finder) FindCoordinatesByName(name string) *city.City {
-	if city, exists := f.NameIndex[name]; exists {
-		return city
-	}
+// FindCoordinatesByName is not implemented for this finder.
+func (f *S2Finder) FindCoordinatesByName(name string) []*city.City {
 	return nil
 }
 
-func (f *S2Finder) FindCityByPostalCode(postalCode string) *city.City {
-	entry, exists := f.PostalCode[postalCode]
-	if !exists {
-		return nil
-	}
-	return f.FindNearestCity(entry.Latitude, entry.Longitude)
+// FindCityByPostalCode is not implemented for this finder.
+func (f *S2Finder) FindCityByPostalCode(postalCode string) []*city.City {
+	return nil
 }
 
-// SerializeIndex saves the index to a file
-func (f *S2Finder) SerializeIndex(filepath string) error {
-	file, err := os.Create(filepath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	encoder := gob.NewEncoder(file)
-	err = encoder.Encode(f)
-	return err
-}
-
-// DeserializeIndex loads the index from a file
-func DeserializeIndex(filepath string) (*S2Finder, error) {
-	file, err := os.Open(filepath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	decoder := gob.NewDecoder(file)
-	var finder S2Finder
-	err = decoder.Decode(&finder)
-	if err != nil {
-		return nil, err
-	}
-	return &finder, nil
-}
-
-func init() {
-	gob.Register(&s2.RegionCoverer{})
-	gob.Register(s2.CellID(0))
-	gob.Register(SerializableSpatialCity{})
-	gob.Register(SerializableRect{})
+// HaversineDistance computes the distance between two points on the Earth's surface.
+func HaversineDistance(p1, p2 s2.Point) s1.Angle {
+	return p1.Distance(p2)
 }

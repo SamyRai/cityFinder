@@ -1,77 +1,109 @@
 package finder
 
 import (
-	"github.com/SamyRai/cityFinder/city"
-	"github.com/SamyRai/cityFinder/dataloader"
-	"github.com/kyroy/kdtree"
+	"encoding/gob"
 	"math"
+	"os"
+
+	"github.com/SamyRai/cityFinder/city"
+	"github.com/kyroy/kdtree"
 )
 
 type KDTreeFinder struct {
-	tree       *kdtree.KDTree
-	postalCode map[string]dataloader.PostalCodeEntry
-	index      map[string]*city.City
+	tree *kdtree.KDTree
+	*CityReader
 }
 
-type Point struct {
+type KDTreePoint struct {
 	Coordinates []float64
-	City        *city.City
+	CityID      int
 }
 
-func (p Point) Dimensions() int {
+func (p KDTreePoint) Dimensions() int {
 	return len(p.Coordinates)
 }
 
-func (p Point) Dimension(i int) float64 {
+func (p KDTreePoint) Dimension(i int) float64 {
 	return p.Coordinates[i]
 }
 
-func (p Point) Distance(q kdtree.Point) float64 {
-	other := q.(Point)
-	dist := 0.0
-	for i := 0; i < len(p.Coordinates); i++ {
-		diff := p.Coordinates[i] - other.Coordinates[i]
-		dist += diff * diff
-	}
-	return math.Sqrt(dist)
+func (p KDTreePoint) Distance(other kdtree.Point) float64 {
+	o := other.(KDTreePoint)
+	dx := p.Coordinates[0] - o.Coordinates[0]
+	dy := p.Coordinates[1] - o.Coordinates[1]
+	return dx*dx + dy*dy
 }
 
-func BuildKDTree(cities []city.SpatialCity, postalCodes map[string]dataloader.PostalCodeEntry) *KDTreeFinder {
-	points := make([]kdtree.Point, len(cities))
-	nameIndex := make(map[string]*city.City)
-	for i, city := range cities {
-		points[i] = Point{
-			Coordinates: []float64{city.Longitude, city.Latitude},
-			City:        &city.City,
-		}
-		nameIndex[city.Name] = &city.City
+type KDTreeMeta struct {
+	Points      []KDTreePoint
+	CityOffsets []int64
+	CityLengths []int64
+}
+
+func DeserializeKDTree(metaPath, citiesPath string) (*KDTreeFinder, error) {
+	metaFile, err := os.Open(metaPath)
+	if err != nil {
+		return nil, err
+	}
+	defer metaFile.Close()
+
+	var meta KDTreeMeta
+	if err := gob.NewDecoder(metaFile).Decode(&meta); err != nil {
+		return nil, err
+	}
+
+	points := make([]kdtree.Point, len(meta.Points))
+	for i, p := range meta.Points {
+		points[i] = p
 	}
 	tree := kdtree.New(points)
-	return &KDTreeFinder{tree: tree, postalCode: postalCodes, index: nameIndex}
+
+	cityReader, err := NewCityReader(citiesPath, meta.CityOffsets, meta.CityLengths)
+	if err != nil {
+		return nil, err
+	}
+
+	return &KDTreeFinder{
+		tree:       tree,
+		CityReader: cityReader,
+	}, nil
 }
 
-func (f *KDTreeFinder) FindNearestCity(lat, lon float64) *city.City {
-	target := Point{
-		Coordinates: []float64{lon, lat},
+func (f *KDTreeFinder) FindNearestCity(lat, lon float64) (*city.City, float64, error) {
+	target := KDTreePoint{Coordinates: []float64{lon, lat}}
+	candidates := f.tree.KNN(target, 100)
+
+	if len(candidates) == 0 {
+		return nil, 0, ErrNoResults
 	}
-	nearest := f.tree.KNN(target, 1)
-	if len(nearest) > 0 {
-		return nearest[0].(Point).City
+
+	var nearestCity *city.City
+	minDist := math.MaxFloat64
+
+	for _, candidate := range candidates {
+		p := candidate.(KDTreePoint)
+		c, err := f.ReadCityAt(p.CityID)
+		if err != nil {
+			continue
+		}
+		dist := city.HaversineDistance(lat, lon, c.Latitude, c.Longitude)
+		if dist < minDist {
+			minDist = dist
+			nearestCity = c
+		}
 	}
+
+	if nearestCity == nil {
+		return nil, 0, ErrNoResults
+	}
+
+	return nearestCity, minDist, nil
+}
+
+func (f *KDTreeFinder) FindCoordinatesByName(name string) []*city.City {
 	return nil
 }
 
-func (f *KDTreeFinder) FindCoordinatesByName(name string) *city.City {
-	if city, exists := f.index[name]; exists {
-		return city
-	}
+func (f *KDTreeFinder) FindCityByPostalCode(postalCode string) []*city.City {
 	return nil
-}
-
-func (f *KDTreeFinder) FindCityByPostalCode(postalCode string) *city.City {
-	entry, exists := f.postalCode[postalCode]
-	if !exists {
-		return nil
-	}
-	return f.FindNearestCity(entry.Latitude, entry.Longitude)
 }

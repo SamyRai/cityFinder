@@ -2,13 +2,17 @@ package city
 
 import (
 	"github.com/dhconnelly/rtreego"
+	"math"
 )
 
+const earthRadiusKm = 6371
+
 type City struct {
-	Latitude  float64
-	Longitude float64
+	ID        string
 	Name      string
 	Country   string
+	Latitude  float64
+	Longitude float64
 }
 
 type SpatialCity struct {
@@ -20,11 +24,21 @@ func (sc *SpatialCity) Bounds() rtreego.Rect {
 	return sc.Rect
 }
 
-func EuclideanDistance(p1, p2 rtreego.Point) float64 {
-	sum := 0.0
-	for i := 0; i < len(p1); i++ {
-		diff := p1[i] - p2[i]
-		sum += diff * diff
-	}
-	return sum
+// HaversineDistance calculates the distance between two points on Earth.
+func HaversineDistance(lat1, lon1, lat2, lon2 float64) float64 {
+	dLat := toRadians(lat2 - lat1)
+	dLon := toRadians(lon2 - lon1)
+	lat1Rad := toRadians(lat1)
+	lat2Rad := toRadians(lat2)
+
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1Rad)*math.Cos(lat2Rad)*
+			math.Sin(dLon/2)*math.Sin(dLon/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+
+	return earthRadiusKm * c
+}
+
+func toRadians(deg float64) float64 {
+	return deg * (math.Pi / 180)
 }
