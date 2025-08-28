@@ -5,14 +5,11 @@ import (
 	"math"
 )
 
-const earthRadiusKm = 6371
-
 type City struct {
-	ID        string
-	Name      string
-	Country   string
 	Latitude  float64
 	Longitude float64
+	Name      string
+	Country   string
 }
 
 type SpatialCity struct {
@@ -23,6 +20,8 @@ type SpatialCity struct {
 func (sc *SpatialCity) Bounds() rtreego.Rect {
 	return sc.Rect
 }
+
+const earthRadiusKm = 6371
 
 // HaversineDistance calculates the distance between two points on Earth.
 func HaversineDistance(lat1, lon1, lat2, lon2 float64) float64 {

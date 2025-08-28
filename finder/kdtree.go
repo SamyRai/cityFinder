@@ -1,109 +1,76 @@
 package finder
 
 import (
-	"encoding/gob"
-	"math"
-	"os"
-
 	"github.com/SamyRai/cityFinder/city"
+	"github.com/SamyRai/cityFinder/dataloader"
 	"github.com/kyroy/kdtree"
 )
 
 type KDTreeFinder struct {
-	tree *kdtree.KDTree
-	*CityReader
+	tree       *kdtree.KDTree
+	postalCode map[string]dataloader.PostalCodeEntry
+	index      map[string][]*city.City
 }
 
-type KDTreePoint struct {
+type Point struct {
 	Coordinates []float64
-	CityID      int
+	City        *city.City
 }
 
-func (p KDTreePoint) Dimensions() int {
+func (p Point) Dimensions() int {
 	return len(p.Coordinates)
 }
 
-func (p KDTreePoint) Dimension(i int) float64 {
+func (p Point) Dimension(i int) float64 {
 	return p.Coordinates[i]
 }
 
-func (p KDTreePoint) Distance(other kdtree.Point) float64 {
-	o := other.(KDTreePoint)
-	dx := p.Coordinates[0] - o.Coordinates[0]
-	dy := p.Coordinates[1] - o.Coordinates[1]
-	return dx*dx + dy*dy
+func (p Point) Distance(q kdtree.Point) float64 {
+	other := q.(Point)
+	// The kdtree library expects a squared Euclidean distance.
+	// We can't provide that, but we can provide the Haversine distance.
+	// This will work for finding the nearest neighbor, as the order is preserved.
+	// Note that the library will take the square root of this value, so the actual distance returned by the library will be incorrect.
+	return city.HaversineDistance(p.Coordinates[1], p.Coordinates[0], other.Coordinates[1], other.Coordinates[0])
 }
 
-type KDTreeMeta struct {
-	Points      []KDTreePoint
-	CityOffsets []int64
-	CityLengths []int64
-}
-
-func DeserializeKDTree(metaPath, citiesPath string) (*KDTreeFinder, error) {
-	metaFile, err := os.Open(metaPath)
-	if err != nil {
-		return nil, err
-	}
-	defer metaFile.Close()
-
-	var meta KDTreeMeta
-	if err := gob.NewDecoder(metaFile).Decode(&meta); err != nil {
-		return nil, err
-	}
-
-	points := make([]kdtree.Point, len(meta.Points))
-	for i, p := range meta.Points {
-		points[i] = p
+func BuildKDTree(cities []city.SpatialCity, postalCodes map[string]dataloader.PostalCodeEntry) *KDTreeFinder {
+	points := make([]kdtree.Point, len(cities))
+	nameIndex := make(map[string][]*city.City)
+	for i, c := range cities {
+		cityCopy := c // Create a new variable to avoid capturing the loop variable in a closure.
+		points[i] = Point{
+			Coordinates: []float64{cityCopy.Longitude, cityCopy.Latitude},
+			City:        &cityCopy.City,
+		}
+		nameIndex[cityCopy.Name] = append(nameIndex[cityCopy.Name], &cityCopy.City)
 	}
 	tree := kdtree.New(points)
-
-	cityReader, err := NewCityReader(citiesPath, meta.CityOffsets, meta.CityLengths)
-	if err != nil {
-		return nil, err
-	}
-
-	return &KDTreeFinder{
-		tree:       tree,
-		CityReader: cityReader,
-	}, nil
+	return &KDTreeFinder{tree: tree, postalCode: postalCodes, index: nameIndex}
 }
 
-func (f *KDTreeFinder) FindNearestCity(lat, lon float64) (*city.City, float64, error) {
-	target := KDTreePoint{Coordinates: []float64{lon, lat}}
-	candidates := f.tree.KNN(target, 100)
-
-	if len(candidates) == 0 {
-		return nil, 0, ErrNoResults
+func (f *KDTreeFinder) FindNearestCity(lat, lon float64) *city.City {
+	target := Point{
+		Coordinates: []float64{lon, lat},
 	}
-
-	var nearestCity *city.City
-	minDist := math.MaxFloat64
-
-	for _, candidate := range candidates {
-		p := candidate.(KDTreePoint)
-		c, err := f.ReadCityAt(p.CityID)
-		if err != nil {
-			continue
-		}
-		dist := city.HaversineDistance(lat, lon, c.Latitude, c.Longitude)
-		if dist < minDist {
-			minDist = dist
-			nearestCity = c
-		}
+	nearest := f.tree.KNN(target, 1)
+	if len(nearest) > 0 {
+		return nearest[0].(Point).City
 	}
-
-	if nearestCity == nil {
-		return nil, 0, ErrNoResults
-	}
-
-	return nearestCity, minDist, nil
+	return nil
 }
 
 func (f *KDTreeFinder) FindCoordinatesByName(name string) []*city.City {
+	if cities, exists := f.index[name]; exists {
+		return cities
+	}
 	return nil
 }
 
-func (f *KDTreeFinder) FindCityByPostalCode(postalCode string) []*city.City {
-	return nil
+func (f *KDTreeFinder) FindCityByPostalCode(postalCode string) *city.City {
+	entry, exists := f.postalCode[postalCode]
+	if !exists {
+		return nil
+	}
+	return f.FindNearestCity(entry.Latitude, entry.Longitude)
 }

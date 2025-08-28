@@ -4,12 +4,13 @@ import (
 	"encoding/csv"
 	"fmt"
 	"github.com/SamyRai/cityFinder/benchmark"
+	"github.com/SamyRai/cityFinder/dataloader"
 	"github.com/SamyRai/cityFinder/finder"
 	"log"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -37,48 +38,57 @@ var testPostalCodes = []string{
 }
 
 func main() {
-	findersToBenchmark := []string{"s2", "kdtree", "rtree", "geohash"}
+	csvLocation := "datasets/allCountries.csv"
+	postalCodeLocation := "datasets/zipCodes.csv"
 
-	for _, finderType := range findersToBenchmark {
-		log.Printf("Building %s index...", finderType)
-		cmd := exec.Command("go", "run", "./../builder", "-finder="+finderType)
-		if err := cmd.Run(); err != nil {
-			log.Fatalf("Failed to build %s index: %v", finderType, err)
-		}
+	log.Printf("Loading the CSV data from %s", csvLocation)
+	cities, err := dataloader.LoadGeoNamesCSV(csvLocation)
+	if err != nil {
+		log.Fatalf("Failed to load GeoNames data from CSV: %v", err)
 	}
+	log.Printf("Finished loading CSV data")
+
+	log.Printf("Loading the Postal Code data from %s", postalCodeLocation)
+	postalCodes, err := dataloader.LoadPostalCodes(postalCodeLocation)
+	if err != nil {
+		log.Fatalf("Failed to load Postal Code data: %v", err)
+	}
+	log.Printf("Finished loading Postal Code data")
+
+	// Clean up the datasets after loading
+	defer func() {
+		cities = nil
+		postalCodes = nil
+		runtime.GC()
+	}()
+
+	// Initialize all finders and measure their memory consumption
+	log.Printf("Initializing finders")
+	var memStatsBefore, memStatsAfter runtime.MemStats
 
 	finders := make(map[string]finder.Finder)
 	overallMemoryUsage := make(map[string]uint64)
-	var memStatsBefore, memStatsAfter runtime.MemStats
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 
-	for _, finderType := range findersToBenchmark {
-		var f finder.Finder
-		var err error
-
-		citiesPath := fmt.Sprintf("datasets/cities_%s.gob", finderType)
-		metaPath := fmt.Sprintf("datasets/meta_%s.gob", finderType)
-		pointsPath := fmt.Sprintf("datasets/points_%s.gob", finderType)
-
+	initFinder := func(name string, buildFunc func() finder.Finder) {
+		defer wg.Done()
+		log.Printf("Initializing %s finder", name)
 		runtime.ReadMemStats(&memStatsBefore)
-		switch finderType {
-		case "s2":
-			f, err = finder.DeserializeS2(metaPath, citiesPath, pointsPath)
-		case "kdtree":
-			f, err = finder.DeserializeKDTree(metaPath, citiesPath)
-		case "rtree":
-			f, err = finder.DeserializeRTree(metaPath, citiesPath)
-		case "geohash":
-			f, err = finder.DeserializeGeoHash(metaPath, citiesPath)
-		}
+		f := buildFunc()
 		runtime.ReadMemStats(&memStatsAfter)
-
-		if err != nil {
-			log.Fatalf("Failed to load %s index: %v", finderType, err)
-		}
-		finders[finderType] = f
-		overallMemoryUsage[finderType] = memStatsAfter.Alloc - memStatsBefore.Alloc
-		defer f.Close()
+		mu.Lock()
+		finders[name] = f
+		overallMemoryUsage[name] = memStatsAfter.Alloc - memStatsBefore.Alloc
+		mu.Unlock()
+		log.Printf("Finished initializing %s finder", name)
 	}
+
+	wg.Add(3)
+	go initFinder("R-tree", func() finder.Finder { return finder.BuildRTree(cities, postalCodes) })
+	go initFinder("Geohash", func() finder.Finder { return finder.BuildGeoHashIndex(cities, 12, postalCodes) })
+	go initFinder("k-d Tree", func() finder.Finder { return finder.BuildKDTree(cities, postalCodes) })
+	wg.Wait()
 
 	log.Printf("Finished initializing all finders")
 

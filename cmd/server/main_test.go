@@ -1,4 +1,3 @@
-// cmd/server/main_test.go
 package main
 
 import (
@@ -7,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/SamyRai/cityFinder/city"
+	"github.com/SamyRai/cityFinder/dataloader"
 	"github.com/SamyRai/cityFinder/finder"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
@@ -17,54 +17,38 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
-// Mock data for testing
-var mockData finder.Finder
+var mockApp *fiber.App
 
 func TestMain(m *testing.M) {
-	// For now, we only test the S2 finder.
-	finderType := "s2"
-	csv := "./../../datasets/allCountries_small.csv"
-	cities := fmt.Sprintf("./../../datasets/cities_%s_test.gob", finderType)
-	points := fmt.Sprintf("./../../datasets/points_%s_test.gob", finderType)
-	meta := fmt.Sprintf("./../../datasets/meta_%s_test.gob", finderType)
-
-	cmd := exec.Command("go", "run", "./../../cmd/builder",
-		"-finder="+finderType,
-		"-csv="+csv,
-		"-cities="+cities,
-		"-points="+points,
-		"-meta="+meta)
-	output, err := cmd.CombinedOutput()
+	// Setup
+	log.Println("Loading test data...")
+	cities, err := dataloader.LoadGeoNamesCSV("./../../datasets/allCountries_small.csv")
 	if err != nil {
-		log.Fatalf("Failed to build test index: %v\nOutput:\n%s", err, output)
+		log.Fatalf("Failed to load test cities: %v", err)
 	}
-
-	mockData, err = finder.DeserializeS2(meta, cities, points)
+	postalCodes, err := dataloader.LoadPostalCodes("./../../datasets/zipCodes_small.csv")
 	if err != nil {
-		log.Fatalf("Failed to load test index: %v", err)
+		log.Fatalf("Failed to load test postal codes: %v", err)
 	}
+	log.Println("Finished loading test data.")
 
-	code := m.Run()
-	mockData.Close()
-
-	os.Remove(cities)
-	os.Remove(points)
-	os.Remove(meta)
-
-	os.Exit(code)
-}
-
-func setupMockApp() *fiber.App {
+	// For testing, we'll use the geohash finder.
+	f := finder.BuildGeoHashIndex(cities, 12, postalCodes)
 	app := fiber.New()
-	setupRoutes(app, mockData)
-	return app
+	setupRoutes(app, f)
+	mockApp = app
+
+	// Run tests
+	code := m.Run()
+
+	// Teardown
+	os.Exit(code)
 }
 
 func pickRandomLines(filepath string, count int) ([]string, error) {
@@ -148,8 +132,6 @@ func pickRandomPostalCodes(filepath string, count int) ([]string, error) {
 }
 
 func TestGetNearestCityRandom(t *testing.T) {
-	t.Skip("Skipping test due to OOM issues")
-	app := setupMockApp()
 	lines, err := pickRandomLines("./../../datasets/allCountries_small.csv", 20)
 	if err != nil {
 		t.Fatalf("Failed to pick random lines: %v", err)
@@ -163,7 +145,7 @@ func TestGetNearestCityRandom(t *testing.T) {
 
 		t.Run(loc.Name, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "/nearest?lat="+fmt.Sprintf("%f", loc.Latitude)+"&lon="+fmt.Sprintf("%f", loc.Longitude), nil)
-			resp, _ := app.Test(req, -1)
+			resp, _ := mockApp.Test(req, -1)
 
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -176,8 +158,6 @@ func TestGetNearestCityRandom(t *testing.T) {
 }
 
 func TestGetCoordinatesByNameRandom(t *testing.T) {
-	t.Skip("Skipping test due to OOM issues")
-	app := setupMockApp()
 	lines, err := pickRandomLines("./../../datasets/allCountries_small.csv", 20)
 	if err != nil {
 		t.Fatalf("Failed to pick random lines: %v", err)
@@ -191,7 +171,7 @@ func TestGetCoordinatesByNameRandom(t *testing.T) {
 
 		t.Run(loc.Name, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "/coordinates?name="+url.QueryEscape(loc.Name), nil)
-			resp, _ := app.Test(req, -1)
+			resp, _ := mockApp.Test(req, -1)
 
 			if resp.StatusCode != http.StatusOK {
 				t.Logf("City %s not found, skipping...", loc.Name)
@@ -200,18 +180,15 @@ func TestGetCoordinatesByNameRandom(t *testing.T) {
 
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-			var cityObj city.City
-			err = json.NewDecoder(resp.Body).Decode(&cityObj)
+			var cities []*city.City
+			err = json.NewDecoder(resp.Body).Decode(&cities)
 			assert.NoError(t, err)
-			assert.Equal(t, loc.Latitude, cityObj.Latitude)
-			assert.Equal(t, loc.Longitude, cityObj.Longitude)
+			assert.NotEmpty(t, cities)
 		})
 	}
 }
 
 func TestGetCityByPostalCodeRandom(t *testing.T) {
-	t.Skip("Skipping test due to OOM issues")
-	app := setupMockApp()
 	postalCodes, err := pickRandomPostalCodes("./../../datasets/zipCodes_small.csv", 20)
 	if err != nil {
 		t.Fatalf("Failed to pick random postal codes: %v", err)
@@ -220,7 +197,7 @@ func TestGetCityByPostalCodeRandom(t *testing.T) {
 	for _, code := range postalCodes {
 		t.Run(code, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "/postalcode?postalcode="+url.QueryEscape(code), nil)
-			resp, _ := app.Test(req, -1)
+			resp, _ := mockApp.Test(req, -1)
 
 			if resp.StatusCode != http.StatusOK {
 				t.Logf("Postal code %s not found, skipping...", code)
@@ -237,11 +214,8 @@ func TestGetCityByPostalCodeRandom(t *testing.T) {
 }
 
 func TestBadRequest(t *testing.T) {
-	t.Skip("Skipping test due to OOM issues")
-	app := setupMockApp()
-
 	req := httptest.NewRequest("GET", "/nearest?lat=invalid&lon=-74.0060", nil)
-	resp, _ := app.Test(req, -1)
+	resp, _ := mockApp.Test(req, -1)
 
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 

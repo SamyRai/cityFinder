@@ -1,43 +1,45 @@
+// cmd/server/main.go
 package main
 
 import (
-	"flag"
-	"fmt"
 	"github.com/SamyRai/cityFinder/finder"
 	"github.com/gofiber/fiber/v2"
 	"log"
 )
 
+import (
+	"flag"
+	"github.com/SamyRai/cityFinder/dataloader"
+)
+
 func main() {
-	finderType := flag.String("finder", "s2", "type of finder to use (s2, kdtree, rtree, geohash)")
+	var (
+		citiesPath     = flag.String("cities", "datasets/cities.csv", "Path to the cities CSV file")
+		postalCodesPath = flag.String("postal", "datasets/zipcodes.csv", "Path to the postal codes CSV file")
+		finderType     = flag.String("finder", "geohash", "Finder type to use (kdtree, rtree, geohash)")
+	)
 	flag.Parse()
 
+	cities, err := dataloader.LoadGeoNamesCSV(*citiesPath)
+	if err != nil {
+		log.Fatalf("Failed to load GeoNames data from CSV: %v", err)
+	}
+	postalCodes, err := dataloader.LoadPostalCodes(*postalCodesPath)
+	if err != nil {
+		log.Fatalf("Failed to load postal codes: %v", err)
+	}
+
 	var f finder.Finder
-	var err error
-
-	citiesPath := fmt.Sprintf("datasets/cities_%s.gob", *finderType)
-	metaPath := fmt.Sprintf("datasets/meta_%s.gob", *finderType)
-	pointsPath := fmt.Sprintf("datasets/points_%s.gob", *finderType)
-
-	log.Printf("Loading %s index...", *finderType)
 	switch *finderType {
-	case "s2":
-		f, err = finder.DeserializeS2(metaPath, citiesPath, pointsPath)
 	case "kdtree":
-		f, err = finder.DeserializeKDTree(metaPath, citiesPath)
+		f = finder.BuildKDTree(cities, postalCodes)
 	case "rtree":
-		f, err = finder.DeserializeRTree(metaPath, citiesPath)
+		f = finder.BuildRTree(cities, postalCodes)
 	case "geohash":
-		f, err = finder.DeserializeGeoHash(metaPath, citiesPath)
+		f = finder.BuildGeoHashIndex(cities, 12, postalCodes)
 	default:
 		log.Fatalf("Unknown finder type: %s", *finderType)
 	}
-
-	if err != nil {
-		log.Fatalf("Failed to load index: %v", err)
-	}
-	defer f.Close()
-	log.Printf("Finished loading %s index", *finderType)
 
 	app := fiber.New()
 	setupRoutes(app, f)
