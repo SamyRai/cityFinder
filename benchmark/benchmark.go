@@ -32,21 +32,15 @@ func MeasureTimeAndMemory(wg *sync.WaitGroup, resultsChan chan<- Result, label s
 func BenchmarkFinders(finders map[string]finder.Finder, overallMemoryUsage map[string]uint64, testLocations []struct {
 	Lat, Lon float64
 	Expected string
-}, postalCodes []string) []Result {
+}) []Result {
 	var wg sync.WaitGroup
-	resultsChan := make(chan Result, len(testLocations)*len(finders)+len(postalCodes)*len(finders))
+	resultsChan := make(chan Result, len(testLocations)*len(finders))
 
 	for name, f := range finders {
 		for _, loc := range testLocations {
 			wg.Add(1)
 			go MeasureTimeAndMemory(&wg, resultsChan, fmt.Sprintf("Finding nearest city using %s for %s", name, loc.Expected), func() *city.City {
 				return f.FindNearestCity(loc.Lat, loc.Lon)
-			})
-		}
-		for _, postalCode := range postalCodes {
-			wg.Add(1)
-			go MeasureTimeAndMemory(&wg, resultsChan, fmt.Sprintf("Finding nearest city using %s for postal code %s", name, postalCode), func() *city.City {
-				return f.FindCityByPostalCode(postalCode)
 			})
 		}
 	}

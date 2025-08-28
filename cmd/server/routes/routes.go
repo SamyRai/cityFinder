@@ -5,17 +5,21 @@ import (
 	"fmt"
 	"github.com/SamyRai/cityFinder/lib/finder"
 	"github.com/gofiber/fiber/v2"
+	"log"
 	"strconv"
+	"strings"
 )
 
-func SetupRoutes(app *fiber.App, s2Finder *finder.S2Finder) {
+func SetupRoutes(app *fiber.App, mainFinder *finder.Finder) {
 	app.Get("/nearest", func(c *fiber.Ctx) error {
 		lat, err := strconv.ParseFloat(c.Query("lat"), 64)
 		if err != nil {
+			log.Printf("Error parsing lat: %v", err)
 			return c.Status(fiber.StatusBadRequest).SendString("Invalid latitude")
 		}
 		lon, err := strconv.ParseFloat(c.Query("lon"), 64)
 		if err != nil {
+			log.Printf("Error parsing lon: %v", err)
 			return c.Status(fiber.StatusBadRequest).SendString("Invalid longitude")
 		}
 
@@ -27,7 +31,7 @@ func SetupRoutes(app *fiber.App, s2Finder *finder.S2Finder) {
 			return c.Status(fiber.StatusBadRequest).SendString("Longitude must be between -180 and 180")
 		}
 
-		city := s2Finder.FindNearestCity(lat, lon)
+		city := mainFinder.FindNearestCity(lat, lon)
 		if city == nil {
 			return c.Status(fiber.StatusNotFound).SendString(fmt.Sprintf("City not found for lat: %f, lon: %f", lat, lon))
 		}
@@ -39,8 +43,12 @@ func SetupRoutes(app *fiber.App, s2Finder *finder.S2Finder) {
 		if name == "" {
 			return c.Status(fiber.StatusBadRequest).SendString("Name is required")
 		}
+		countryCode := strings.ToUpper(c.Query("country-code"))
+		if countryCode == "" {
+			return c.Status(fiber.StatusBadRequest).SendString("Country code is required")
+		}
 
-		city := s2Finder.FindCoordinatesByName(name)
+		city := mainFinder.FindCityByName(name, countryCode)
 		if city == nil {
 			return c.Status(fiber.StatusNotFound).SendString("City not found")
 		}
@@ -48,12 +56,16 @@ func SetupRoutes(app *fiber.App, s2Finder *finder.S2Finder) {
 		return c.JSON(city)
 	})
 
-	app.Get("/postalcode", func(c *fiber.Ctx) error {
-		postalCode := c.Query("postalcode")
+	app.Get("/postalCode", func(c *fiber.Ctx) error {
+		postalCode := c.Query("code")
+		countryCode := strings.ToUpper(c.Query("country-code"))
 		if postalCode == "" {
 			return c.Status(fiber.StatusBadRequest).SendString("Postal code is required")
 		}
-		city := s2Finder.FindCityByPostalCode(postalCode)
+		if countryCode == "" {
+			return c.Status(fiber.StatusBadRequest).SendString("Country code is required")
+		}
+		city := mainFinder.FindCityByPostalCode(postalCode, countryCode)
 		if city == nil {
 			return c.Status(fiber.StatusNotFound).SendString("City not found")
 		}

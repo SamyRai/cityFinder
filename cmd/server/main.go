@@ -14,19 +14,26 @@ import (
 )
 
 func main() {
-	configPath := os.Getenv("CONFIG_PATH")
+	configPath, exists := os.LookupEnv("CONFIG_PATH")
+	if !exists {
+		configPath = "config.json"
+	}
+
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
-	s2Finder, err := initializer.Initialize(cfg)
+	mainFinder, err := initializer.Initialize(cfg)
 	if err != nil {
 		log.Fatalf("Initialization failed: %v", err)
 	}
 
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		ETag:              true,
+		EnablePrintRoutes: true,
+	})
 	app.Use(Logger())
-	routes.SetupRoutes(app, s2Finder)
+	routes.SetupRoutes(app, mainFinder)
 
 	log.Fatal(app.Listen(":3000"))
 }
@@ -51,7 +58,7 @@ func Logger() fiber.Handler {
 		form, _ := c.MultipartForm()
 
 		// Convert query parameters to a string
-		queryParams, err := json.Marshal(c.AllParams())
+		queryParams, err := json.Marshal(c.Queries())
 		if err != nil {
 			log.Printf("Error marshalling query params: %v", err)
 		}

@@ -9,6 +9,7 @@ type City struct {
 	Longitude float64
 	Name      string
 	Country   string
+	AltNames  []string
 }
 
 type SpatialCity struct {

@@ -1,4 +1,4 @@
-package dataloader
+package dataLoader
 
 import (
 	"encoding/csv"
@@ -21,7 +21,7 @@ type PostalCodeEntry struct {
 	Accuracy    int
 }
 
-func LoadPostalCodes(filepath string) (map[string]PostalCodeEntry, error) {
+func LoadPostalCodes(filepath string) (map[string]map[string]PostalCodeEntry, error) {
 	file, err := os.Open(filepath)
 	if err != nil {
 		return nil, err
@@ -35,12 +35,11 @@ func LoadPostalCodes(filepath string) (map[string]PostalCodeEntry, error) {
 		return nil, err
 	}
 
-	postalCodes := make(map[string]PostalCodeEntry)
+	postalCodes := make(map[string]map[string]PostalCodeEntry)
 	for _, record := range records {
 		lat, _ := strconv.ParseFloat(record[9], 64)
 		lon, _ := strconv.ParseFloat(record[10], 64)
 		accuracy, _ := strconv.Atoi(record[11])
-
 		postalCode := PostalCodeEntry{
 			CountryCode: record[0],
 			PostalCode:  record[1],
@@ -56,7 +55,10 @@ func LoadPostalCodes(filepath string) (map[string]PostalCodeEntry, error) {
 			Accuracy:    accuracy,
 		}
 
-		postalCodes[postalCode.PostalCode] = postalCode
+		if _, exists := postalCodes[postalCode.CountryCode]; !exists {
+			postalCodes[postalCode.CountryCode] = make(map[string]PostalCodeEntry)
+		}
+		postalCodes[postalCode.CountryCode][postalCode.PostalCode] = postalCode
 	}
 
 	return postalCodes, nil

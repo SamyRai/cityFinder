@@ -8,7 +8,7 @@ import (
 	"github.com/SamyRai/cityFinder/cmd/server/routes"
 	"github.com/SamyRai/cityFinder/lib/city"
 	"github.com/SamyRai/cityFinder/lib/config"
-	"github.com/SamyRai/cityFinder/lib/finder"
+	"github.com/SamyRai/cityFinder/lib/finder/coordinates"
 	"github.com/SamyRai/cityFinder/lib/initializer"
 	"github.com/SamyRai/cityFinder/util"
 	"github.com/gofiber/fiber/v2"
@@ -21,7 +21,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -31,7 +30,7 @@ import (
 type ServerTestSuite struct {
 	suite.Suite
 	app      *fiber.App
-	s2Finder *finder.S2Finder
+	s2Finder *coordinates.S2Finder
 	config   *config.Config
 	rootDir  string
 }
@@ -41,13 +40,10 @@ func (suite *ServerTestSuite) SetupSuite() {
 	require.NoError(suite.T(), err)
 	suite.rootDir = rootDir
 
-	cfg, err := config.LoadConfig(filepath.Join(rootDir, "config.json"))
+	cfg, err := config.LoadConfig("config.json")
 	fmt.Printf("cfg: %+v\n", cfg)
 	fmt.Println("rootDir: ", rootDir)
 	require.NoError(suite.T(), err)
-
-	// Attach the root directory to the datasets folder
-	cfg.DatasetsFolder = rootDir + "/" + cfg.DatasetsFolder
 
 	suite.s2Finder, err = initializer.Initialize(cfg)
 	require.NoError(suite.T(), err)
@@ -113,7 +109,7 @@ func (suite *ServerTestSuite) parseCityLine(line string) (city.City, error) {
 	}, nil
 }
 
-func (suite *ServerTestSuite) pickRandomPostalCodes(filepath string, count int) ([]string, error) {
+func (suite *ServerTestSuite) pickRandomPostalCodes(filepath string, count int) (map[string]map[string]string, error) {
 	file, err := os.Open(filepath)
 	if err != nil {
 		return nil, err
@@ -127,14 +123,21 @@ func (suite *ServerTestSuite) pickRandomPostalCodes(filepath string, count int) 
 		return nil, err
 	}
 
-	rand.Seed(time.Now().UnixNano())
+	rand.New(rand.NewSource(time.Now().UnixNano()))
 	rand.Shuffle(len(records), func(i, j int) {
 		records[i], records[j] = records[j], records[i]
 	})
 
-	var postalCodes []string
+	var postalCodes map[string]map[string]string
 	for i := 0; i < count && i < len(records); i++ {
-		postalCodes = append(postalCodes, records[i][1])
+		if postalCodes == nil {
+			postalCodes = make(map[string]map[string]string)
+		}
+		if postalCodes[records[i][0]] == nil {
+			postalCodes[records[i][0]] = make(map[string]string)
+		}
+
+		postalCodes[records[i][0]][records[i][1]] = records[i][2]
 	}
 
 	return postalCodes, nil
@@ -149,13 +152,14 @@ func (suite *ServerTestSuite) TestGetNearestCityRandom() {
 		require.NoError(suite.T(), err)
 
 		suite.Run(loc.Name, func() {
-			req := httptest.NewRequest("GET", "/nearest?lat="+fmt.Sprintf("%f", loc.Latitude)+"&lon="+fmt.Sprintf("%f", loc.Longitude), nil)
+			query := fmt.Sprintf("/nearest?lat=%f&lon=%f", loc.Latitude, loc.Longitude)
+			req := httptest.NewRequest("GET", query, nil)
 			resp, _ := suite.app.Test(req, -1)
 
 			assert.Equal(suite.T(), http.StatusOK, resp.StatusCode)
 
 			var cityObj city.City
-			err := json.NewDecoder(resp.Body).Decode(&cityObj)
+			err = json.NewDecoder(resp.Body).Decode(&cityObj)
 			assert.NoError(suite.T(), err)
 			assert.NotEmpty(suite.T(), cityObj.Name)
 		})
@@ -163,30 +167,29 @@ func (suite *ServerTestSuite) TestGetNearestCityRandom() {
 }
 
 func (suite *ServerTestSuite) TestGetCoordinatesByNameRandom() {
-	lines, err := suite.pickRandomLines("../../datasets/allCountries.txt", 20)
+	postalCodes, err := suite.pickRandomPostalCodes("../../datasets/zipCodes.txt", 20)
 	require.NoError(suite.T(), err)
 
-	for _, line := range lines {
-		loc, err := suite.parseCityLine(line)
-		require.NoError(suite.T(), err)
+	for countryCode, country := range postalCodes {
+		for _, cityName := range country {
+			suite.Run(cityName, func() {
+				req := httptest.NewRequest("GET", "/coordinates?name="+url.QueryEscape(cityName)+"&country-code="+countryCode, nil)
+				resp, _ := suite.app.Test(req, -1)
 
-		suite.Run(loc.Name, func() {
-			req := httptest.NewRequest("GET", "/coordinates?name="+url.QueryEscape(loc.Name), nil)
-			resp, _ := suite.app.Test(req, -1)
+				if resp.StatusCode != http.StatusOK {
+					suite.T().Logf("City %s not found, skipping...", cityName)
+					return
+				}
 
-			if resp.StatusCode != http.StatusOK {
-				suite.T().Logf("City %s not found, skipping...", loc.Name)
-				return
-			}
+				assert.Equal(suite.T(), http.StatusOK, resp.StatusCode)
 
-			assert.Equal(suite.T(), http.StatusOK, resp.StatusCode)
-
-			var cityObj city.City
-			err := json.NewDecoder(resp.Body).Decode(&cityObj)
-			assert.NoError(suite.T(), err)
-			assert.Equal(suite.T(), loc.Latitude, cityObj.Latitude)
-			assert.Equal(suite.T(), loc.Longitude, cityObj.Longitude)
-		})
+				var cityObj city.City
+				err := json.NewDecoder(resp.Body).Decode(&cityObj)
+				assert.NoError(suite.T(), err)
+				assert.Equal(suite.T(), cityName, cityObj.Name)
+				assert.Equal(suite.T(), countryCode, cityObj.Country)
+			})
+		}
 	}
 }
 
@@ -194,23 +197,26 @@ func (suite *ServerTestSuite) TestGetCityByPostalCodeRandom() {
 	postalCodes, err := suite.pickRandomPostalCodes("../../datasets/zipCodes.txt", 20)
 	require.NoError(suite.T(), err)
 
-	for _, code := range postalCodes {
-		suite.Run(code, func() {
-			req := httptest.NewRequest("GET", "/postalcode?postalcode="+url.QueryEscape(code), nil)
-			resp, _ := suite.app.Test(req, -1)
+	for countryCode, country := range postalCodes {
+		for code := range country {
+			suite.Run(code, func() {
+				queryParams := url.QueryEscape("code=" + code + "&country-code=" + countryCode)
+				req := httptest.NewRequest("GET", "/postalCode?"+queryParams, nil)
+				resp, _ := suite.app.Test(req, -1)
 
-			if resp.StatusCode != http.StatusOK {
-				suite.T().Logf("Postal code %s not found, skipping...", code)
-				return
-			}
+				if resp.StatusCode != http.StatusOK {
+					suite.T().Logf("Postal code %s not found, skipping...", code)
+					return
+				}
 
-			assert.Equal(suite.T(), http.StatusOK, resp.StatusCode)
+				assert.Equal(suite.T(), http.StatusOK, resp.StatusCode)
 
-			var cityObj city.City
-			err := json.NewDecoder(resp.Body).Decode(&cityObj)
-			assert.NoError(suite.T(), err)
-			assert.NotEmpty(suite.T(), cityObj.Name)
-		})
+				var cityObj city.City
+				err := json.NewDecoder(resp.Body).Decode(&cityObj)
+				assert.NoError(suite.T(), err)
+				assert.NotEmpty(suite.T(), cityObj.Name)
+			})
+		}
 	}
 }
 

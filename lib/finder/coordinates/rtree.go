@@ -1,8 +1,8 @@
-package finder
+package coordinates
 
 import (
 	"github.com/SamyRai/cityFinder/lib/city"
-	"github.com/SamyRai/cityFinder/lib/dataloader"
+	"github.com/SamyRai/cityFinder/lib/dataLoader"
 	"github.com/cheggaaa/pb/v3"
 	"github.com/dhconnelly/rtreego"
 )
@@ -10,10 +10,10 @@ import (
 type RTreeFinder struct {
 	tree       *rtreego.Rtree
 	nameIndex  map[string]*city.City
-	postalCode map[string]dataloader.PostalCodeEntry
+	postalCode map[string]dataLoader.PostalCodeEntry
 }
 
-func BuildRTree(cities []city.SpatialCity, postalCodes map[string]dataloader.PostalCodeEntry) *RTreeFinder {
+func BuildRTree(cities []city.SpatialCity, postalCodes map[string]dataLoader.PostalCodeEntry) *RTreeFinder {
 	rtree := rtreego.NewTree(2, 25, 50)
 	bar := pb.Full.Start(len(cities))
 	defer bar.Finish()
@@ -27,7 +27,7 @@ func BuildRTree(cities []city.SpatialCity, postalCodes map[string]dataloader.Pos
 	return &RTreeFinder{tree: rtree, nameIndex: nameIndex, postalCode: postalCodes}
 }
 
-func (f *RTreeFinder) FindNearestCity(lat, lon float64) *city.City {
+func (f *RTreeFinder) NearestPlace(lat, lon float64) *city.City {
 	point := rtreego.Point{lon, lat}
 	rect, _ := rtreego.NewRect(point, []float64{0.1, 0.1}) // Start with a larger search area
 	results := f.tree.SearchIntersect(rect)
@@ -56,17 +56,10 @@ func (f *RTreeFinder) FindNearestCity(lat, lon float64) *city.City {
 	return nearestCity
 }
 
-func (f *RTreeFinder) FindCoordinatesByName(name string) *city.City {
-	if city, exists := f.nameIndex[name]; exists {
-		return city
-	}
-	return nil
-}
-
 func (f *RTreeFinder) FindCityByPostalCode(postalCode string) *city.City {
 	entry, exists := f.postalCode[postalCode]
 	if !exists {
 		return nil
 	}
-	return f.FindNearestCity(entry.Latitude, entry.Longitude)
+	return f.NearestPlace(entry.Latitude, entry.Longitude)
 }

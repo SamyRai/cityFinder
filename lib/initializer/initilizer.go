@@ -4,24 +4,31 @@ import (
 	"archive/zip"
 	"fmt"
 	"github.com/SamyRai/cityFinder/lib/config"
-	"github.com/SamyRai/cityFinder/lib/dataloader"
+	"github.com/SamyRai/cityFinder/lib/dataLoader"
 	"github.com/SamyRai/cityFinder/lib/finder"
+	"github.com/SamyRai/cityFinder/lib/finder/coordinates"
+	"github.com/SamyRai/cityFinder/lib/finder/name"
+	"github.com/SamyRai/cityFinder/lib/finder/postalCode"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
-func Initialize(cfg *config.Config) (*finder.S2Finder, error) {
+// Initialize ensures datasets are downloaded and extracted, and the indexes are built
+func Initialize(cfg *config.Config) (*finder.Finder, error) {
 	if err := ensureDatasets(cfg); err != nil {
 		return nil, err
 	}
-	return ensureS2Index(cfg)
+	return ensureFinders(cfg)
 }
 
+// ensureDatasets ensures that the datasets are downloaded and extracted
 func ensureDatasets(cfg *config.Config) error {
+	log.Printf("Ensuring datasets are downloaded and extracted in %s", cfg.DatasetsFolder)
 	if _, err := os.Stat(cfg.DatasetsFolder); os.IsNotExist(err) {
 		err := os.Mkdir(cfg.DatasetsFolder, os.ModePerm)
 		if err != nil {
@@ -38,6 +45,7 @@ func ensureDatasets(cfg *config.Config) error {
 	return nil
 }
 
+// downloadAndExtractDataset downloads and extracts the dataset if not already present
 func downloadAndExtractDataset(url, zipName, fileName string, cfg *config.Config) error {
 	zipPath := filepath.Join(cfg.DatasetsFolder, zipName)
 	filePath := filepath.Join(cfg.DatasetsFolder, fileName)
@@ -66,6 +74,7 @@ func downloadAndExtractDataset(url, zipName, fileName string, cfg *config.Config
 	return nil
 }
 
+// downloadFile downloads a file from a given URL
 func downloadFile(filepath string, url string) error {
 	out, err := os.Create(filepath)
 	if err != nil {
@@ -83,6 +92,7 @@ func downloadFile(filepath string, url string) error {
 	return err
 }
 
+// unzipAndRename unzips a file and renames it to the specified new file name
 func unzipAndRename(src string, dest string, newFileName string) error {
 	r, err := zip.OpenReader(src)
 	if err != nil {
@@ -96,7 +106,10 @@ func unzipAndRename(src string, dest string, newFileName string) error {
 			return fmt.Errorf("%s: illegal file path", fpath)
 		}
 		if f.FileInfo().IsDir() {
-			os.MkdirAll(fpath, os.ModePerm)
+			err := os.MkdirAll(fpath, os.ModePerm)
+			if err != nil {
+				return err
+			}
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
@@ -111,51 +124,110 @@ func unzipAndRename(src string, dest string, newFileName string) error {
 			return err
 		}
 		_, err = io.Copy(outFile, rc)
-		outFile.Close()
-		rc.Close()
+		err = outFile.Close()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to close file: %v", err)
+		}
+		err = rc.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close file: %v", err)
 		}
 	}
 	return nil
 }
 
-func ensureS2Index(cfg *config.Config) (*finder.S2Finder, error) {
-	if _, err := os.Stat(cfg.S2IndexFile); os.IsNotExist(err) {
-		log.Printf("S2 index not found, building...")
-		if err := buildS2Index(cfg); err != nil {
-			return nil, err
+// ensureFinders ensures that the indexes are built and serialized
+func ensureFinders(cfg *config.Config) (*finder.Finder, error) {
+	s2IndexPath := filepath.Join(cfg.DatasetsFolder, cfg.S2.IndexFile)
+	nameIndexPath := filepath.Join(cfg.DatasetsFolder, cfg.NameIndexFile)
+	postalCodeIndexPath := filepath.Join(cfg.DatasetsFolder, cfg.PostalCodeIndexFile)
+
+	var s2Finder *coordinates.S2Finder
+	var nameFinder *name.Finder
+	var postalCodeFinder *postalCode.Finder
+	var err error
+
+	// Load city and postal code data
+	cities, err := dataLoader.LoadGeoNamesCSV(filepath.Join(cfg.DatasetsFolder, cfg.AllCitiesFile))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load GeoNames data from CSV: %v", err)
+	}
+
+	postalCodes, err := dataLoader.LoadPostalCodes(filepath.Join(cfg.DatasetsFolder, cfg.PostalCodesFile))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load Postal Code data: %v", err)
+	}
+
+	// Use a wait group to parallelize the index building
+	var wg sync.WaitGroup
+	wg.Add(3) // We have three tasks to perform concurrently
+
+	go func() {
+		defer wg.Done()
+		// Ensure S2 index
+		log.Printf("Ensuring S2 index is built and serialized in %s", s2IndexPath)
+		if _, err := os.Stat(s2IndexPath); os.IsNotExist(err) {
+			log.Printf("S2 index not found in %s\nBuilding it...", s2IndexPath)
+			s2Finder, err = coordinates.BuildIndex(cities, &cfg.S2)
+			if err != nil {
+				log.Fatalf("failed to build S2 index: %v", err)
+			}
+			err = s2Finder.SerializeIndex(s2IndexPath)
+			if err != nil {
+				log.Fatalf("failed to serialize S2 index: %v", err)
+			}
+		} else {
+			s2Finder, err = coordinates.DeserializeIndex(s2IndexPath)
+			if err != nil {
+				log.Fatalf("failed to deserialize S2 index: %v", err)
+			}
 		}
-	}
-	return finder.DeserializeIndex(cfg.S2IndexFile)
-}
+	}()
 
-func buildS2Index(cfg *config.Config) error {
-	csvLocation := filepath.Join(cfg.DatasetsFolder, cfg.AllCitiesFile)
-	postalCodeLocation := filepath.Join(cfg.DatasetsFolder, cfg.PostalCodesFile)
+	go func() {
+		defer wg.Done()
+		// Ensure name index
+		log.Printf("Ensuring name index is built and serialized in %s", nameIndexPath)
+		if _, err := os.Stat(nameIndexPath); os.IsNotExist(err) {
+			log.Printf("Name index not found in %s\nBuilding it...", nameIndexPath)
+			nameFinder = name.BuildIndex(cities)
+			err = nameFinder.SerializeIndex(nameIndexPath)
+			if err != nil {
+				log.Fatalf("failed to serialize name index: %v", err)
+			}
+		} else {
+			nameFinder, err = name.DeserializeIndex(nameIndexPath)
+			if err != nil {
+				log.Fatalf("failed to deserialize name index: %v", err)
+			}
+		}
+	}()
 
-	log.Printf("Loading the CSV data from %s", csvLocation)
-	cities, err := dataloader.LoadGeoNamesCSV(csvLocation)
-	if err != nil {
-		return fmt.Errorf("failed to load GeoNames data from CSV: %v", err)
-	}
-	log.Printf("Finished loading CSV data")
+	go func() {
+		defer wg.Done()
+		// Ensure postal code index
+		log.Printf("Ensuring postal code index is built and serialized in %s", postalCodeIndexPath)
+		if _, err := os.Stat(postalCodeIndexPath); os.IsNotExist(err) {
+			log.Printf("Postal code index not found in %s\nBuilding it...", postalCodeIndexPath)
+			postalCodeFinder = postalCode.BuildIndex(postalCodes)
+			err = postalCodeFinder.SerializeIndex(postalCodeIndexPath)
+			if err != nil {
+				log.Fatalf("failed to serialize postal code index: %v", err)
+			}
+		} else {
+			postalCodeFinder, err = postalCode.DeserializeIndex(postalCodeIndexPath)
+			if err != nil {
+				log.Fatalf("failed to deserialize postal code index: %v", err)
+			}
+		}
+	}()
 
-	log.Printf("Loading the Postal Code data from %s", postalCodeLocation)
-	postalCodes, err := dataloader.LoadPostalCodes(postalCodeLocation)
-	if err != nil {
-		return fmt.Errorf("failed to load Postal Code data: %v", err)
-	}
-	log.Printf("Finished loading Postal Code data")
+	// Wait for all goroutines to finish
+	wg.Wait()
 
-	log.Printf("Building S2 index")
-	s2Finder := finder.BuildS2Index(cities, postalCodes)
-
-	log.Printf("Serializing S2 index to %s", cfg.S2IndexFile)
-	err = s2Finder.SerializeIndex(cfg.S2IndexFile)
-	if err != nil {
-		return fmt.Errorf("failed to serialize S2 index: %v", err)
-	}
-	log.Printf("Finished serializing S2 index")
-	return nil
+	return &finder.Finder{
+		S2Finder:         s2Finder,
+		NameFinder:       nameFinder,
+		PostalCodeFinder: postalCodeFinder,
+	}, nil
 }

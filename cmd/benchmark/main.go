@@ -4,8 +4,9 @@ import (
 	"encoding/csv"
 	"fmt"
 	"github.com/SamyRai/cityFinder/benchmark"
-	"github.com/SamyRai/cityFinder/lib/dataloader"
+	"github.com/SamyRai/cityFinder/lib/dataLoader"
 	"github.com/SamyRai/cityFinder/lib/finder"
+	"github.com/SamyRai/cityFinder/lib/finder/coordinates"
 	"log"
 	"os"
 	"runtime"
@@ -42,14 +43,14 @@ func main() {
 	postalCodeLocation := "datasets/zipCodes.csv"
 
 	log.Printf("Loading the CSV data from %s", csvLocation)
-	cities, err := dataloader.LoadGeoNamesCSV(csvLocation)
+	cities, err := dataLoader.LoadGeoNamesCSV(csvLocation)
 	if err != nil {
 		log.Fatalf("Failed to load GeoNames data from CSV: %v", err)
 	}
 	log.Printf("Finished loading CSV data")
 
 	log.Printf("Loading the Postal Code data from %s", postalCodeLocation)
-	postalCodes, err := dataloader.LoadPostalCodes(postalCodeLocation)
+	postalCodes, err := dataLoader.LoadPostalCodes(postalCodeLocation)
 	if err != nil {
 		log.Fatalf("Failed to load Postal Code data: %v", err)
 	}
@@ -85,10 +86,10 @@ func main() {
 	}
 
 	wg.Add(4)
-	go initFinder("R-tree", func() finder.Finder { return finder.BuildRTree(cities, postalCodes) })
-	go initFinder("Geohash", func() finder.Finder { return finder.BuildGeoHashIndex(cities, 12, postalCodes) })
-	go initFinder("S2", func() finder.Finder { return finder.BuildS2Index(cities, postalCodes) })
-	go initFinder("k-d Tree", func() finder.Finder { return finder.BuildKDTree(cities, postalCodes) })
+	go initFinder("R-tree", func() finder.Finder { return coordinates.BuildRTree(cities, postalCodes) })
+	go initFinder("Geohash", func() finder.Finder { return coordinates.BuildGeoHashIndex(cities, 12, postalCodes) })
+	go initFinder("S2", func() finder.Finder { return coordinates.BuildS2Index(cities, postalCodes) })
+	go initFinder("k-d Tree", func() finder.Finder { return coordinates.BuildKDTree(cities, postalCodes) })
 	wg.Wait()
 
 	log.Printf("Finished initializing all finders")

@@ -1,18 +1,18 @@
-package finder
+package coordinates
 
 import (
 	"github.com/SamyRai/cityFinder/lib/city"
-	"github.com/SamyRai/cityFinder/lib/dataloader"
+	"github.com/SamyRai/cityFinder/lib/dataLoader"
 	"github.com/dhconnelly/rtreego"
 	"github.com/mmcloughlin/geohash"
 )
 
 type GeoHashFinder struct {
 	data       map[string][]city.SpatialCity
-	postalCode map[string]dataloader.PostalCodeEntry
+	postalCode map[string]dataLoader.PostalCodeEntry
 }
 
-func BuildGeoHashIndex(cities []city.SpatialCity, precision uint, postalCodes map[string]dataloader.PostalCodeEntry) *GeoHashFinder {
+func BuildGeoHashIndex(cities []city.SpatialCity, precision uint, postalCodes map[string]dataLoader.PostalCodeEntry) *GeoHashFinder {
 	index := &GeoHashFinder{
 		data:       make(map[string][]city.SpatialCity),
 		postalCode: postalCodes,
@@ -24,7 +24,7 @@ func BuildGeoHashIndex(cities []city.SpatialCity, precision uint, postalCodes ma
 	return index
 }
 
-func (f *GeoHashFinder) FindNearestCity(lat, lon float64) *city.City {
+func (f *GeoHashFinder) NearestPlace(lat, lon float64) *city.City {
 	hash := geohash.EncodeWithPrecision(lat, lon, 12)
 	closest := city.SpatialCity{}
 	minDist := float64(1<<63 - 1)
@@ -45,15 +45,10 @@ func (f *GeoHashFinder) FindNearestCity(lat, lon float64) *city.City {
 	return &closest.City
 }
 
-func (f *GeoHashFinder) FindCoordinatesByName(name string) *city.City {
-	// Implement this if needed for completeness
-	return nil
-}
-
 func (f *GeoHashFinder) FindCityByPostalCode(postalCode string) *city.City {
 	entry, exists := f.postalCode[postalCode]
 	if !exists {
 		return nil
 	}
-	return f.FindNearestCity(entry.Latitude, entry.Longitude)
+	return f.NearestPlace(entry.Latitude, entry.Longitude)
 }

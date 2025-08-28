@@ -1,7 +1,8 @@
-package dataloader
+package dataLoader
 
 import (
 	"bufio"
+	"fmt"
 	"github.com/SamyRai/cityFinder/lib/city"
 	"os"
 	"strconv"
@@ -14,16 +15,21 @@ import (
 func LoadGeoNamesCSV(filepath string) ([]city.SpatialCity, error) {
 	file, err := os.Open(filepath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open file: %v", err)
 	}
 	defer file.Close()
 
+	// Count the number of lines in the file for the progress bar
 	lineCount := 0
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		lineCount++
 	}
-	file.Seek(0, 0)
+	// Reset the file pointer to the beginning
+	_, err = file.Seek(0, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to seek to beginning of file: %v", err)
+	}
 
 	var cities []city.SpatialCity
 	scanner = bufio.NewScanner(file)
@@ -46,11 +52,14 @@ func LoadGeoNamesCSV(filepath string) ([]city.SpatialCity, error) {
 			continue
 		}
 
+		altNames := strings.Split(fields[3], ",")
+
 		cityObj := city.City{
 			Latitude:  lat,
 			Longitude: lon,
 			Name:      fields[1],
 			Country:   fields[8],
+			AltNames:  altNames,
 		}
 
 		point := rtreego.Point{lon, lat}
@@ -62,7 +71,7 @@ func LoadGeoNamesCSV(filepath string) ([]city.SpatialCity, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to scan file: %v, %v", filepath, err)
 	}
 	return cities, nil
 }
