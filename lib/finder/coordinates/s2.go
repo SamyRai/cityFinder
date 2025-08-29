@@ -47,17 +47,18 @@ func BuildIndex(cities []city.SpatialCity, config *config.S2) (*S2Finder, error)
 }
 
 // FindNearestCity finds the nearest city to the given latitude and longitude
-func (f *S2Finder) NearestPlace(lat, lon float64) (*city.City, float64, error)
+func (f *S2Finder) NearestPlace(lat, lon float64) (*city.City, float64, error) {
 	point := s2.PointFromLatLng(s2.LatLngFromDegrees(lat, lon))
 	initialRadius := 1e-5 // Start with a small radius
-	maxRadius := 0.1      // Set a maximum radius to avoid infinite loops
+	maxRadius := 10.0     // Set a maximum radius to avoid infinite loops
 
-	var nearestCity *city.City
 	for radius := initialRadius; radius <= maxRadius; radius *= 2 {
 		expanded := s2.CapFromPoint(point).Expanded(s1.Angle(radius))
 		covering := f.Index.Covering(expanded)
 
+		var nearestCity *city.City
 		minDist := math.MaxFloat64
+
 		for _, cellID := range covering {
 			if ssc, ok := f.Data[cellID]; ok {
 				sc, err := ToSpatialCity(ssc)
@@ -73,11 +74,11 @@ func (f *S2Finder) NearestPlace(lat, lon float64) (*city.City, float64, error)
 		}
 
 		if nearestCity != nil {
-			return nearestCity
+			return nearestCity, minDist, nil
 		}
 	}
 
-	return nil
+	return nil, 0, fmt.Errorf("no city found")
 }
 
 // euclideanDistance calculates the Euclidean distance between two points
@@ -120,5 +121,4 @@ func init() {
 	gob.Register(&s2.RegionCoverer{})
 	gob.Register(s2.CellID(0))
 	gob.Register(SerializableSpatialCity{})
-	gob.Register(SerializableRect{})
 }

@@ -2,7 +2,6 @@ package city
 
 import (
 	"math"
-	"github.com/dhconnelly/rtreego"
 )
 
 type City struct {
@@ -13,22 +12,57 @@ type City struct {
 	AltNames  []string
 }
 
-type SpatialCity struct {
-	City
-	Rect rtreego.Rect
+type Rect struct {
+	Min, Max []float64
 }
 
-func (sc *SpatialCity) Bounds() rtreego.Rect {
+type SpatialCity struct {
+	City
+	Rect *Rect
+}
+
+func (sc *SpatialCity) Bounds() *Rect {
 	return sc.Rect
 }
 
-func EuclideanDistance(p1, p2 rtreego.Point) float64 {
+func (r *Rect) Intersects(other *Rect) bool {
+	for i := range r.Min {
+		if r.Min[i] > other.Max[i] || r.Max[i] < other.Min[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (r *Rect) Area() float64 {
+	area := 1.0
+	for i := range r.Min {
+		area *= r.Max[i] - r.Min[i]
+	}
+	return area
+}
+
+func (r *Rect) Union(other *Rect) *Rect {
+	min := make([]float64, len(r.Min))
+	max := make([]float64, len(r.Max))
+	for i := range r.Min {
+		min[i] = math.Min(r.Min[i], other.Min[i])
+		max[i] = math.Max(r.Max[i], other.Max[i])
+	}
+	return &Rect{Min: min, Max: max}
+}
+
+func (r *Rect) Enlargement(other *Rect) float64 {
+	return r.Union(other).Area() - r.Area()
+}
+
+func EuclideanDistance(p1, p2 []float64) float64 {
 	sum := 0.0
 	for i := 0; i < len(p1); i++ {
 		diff := p1[i] - p2[i]
 		sum += diff * diff
 	}
-	return sum
+	return math.Sqrt(sum)
 }
 
 // HaversineDistance calculates the distance between two geographical points in kilometers

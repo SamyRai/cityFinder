@@ -1,0 +1,17 @@
+{
+  "datasets_folder": "testdata",
+  "all_cities_url": "",
+  "postal_codes_url": "",
+  "all_cities_file": "allCountries.txt",
+  "postal_codes_file": "zipCodes.txt",
+  "all_cities_zip": "",
+  "postal_codes_zip": "",
+  "postal_code_index_file": "postal_code_index_test.gob",
+  "name_index_file": "name_index_test.gob",
+  "s2": {
+    "min_level": 10,
+    "max_level": 15,
+    "max_cells": 8,
+    "index_file": "s2index_test.gob"
+  }
+}

@@ -3,13 +3,11 @@ package dataLoader
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"github.com/SamyRai/cityFinder/lib/city"
 	"os"
 	"strconv"
 	"strings"
-
-	"github.com/cheggaaa/pb/v3"
-	"github.com/dhconnelly/rtreego"
 )
 
 func LoadGeoNamesCSV(filepath string) ([]city.SpatialCity, error) {
@@ -19,36 +17,25 @@ func LoadGeoNamesCSV(filepath string) ([]city.SpatialCity, error) {
 	}
 	defer file.Close()
 
-	// Count the number of lines in the file for the progress bar
-	lineCount := 0
+	var cities []city.SpatialCity
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		lineCount++
-	}
-	// Reset the file pointer to the beginning
-	_, err = file.Seek(0, 0)
-	if err != nil {
-		return nil, fmt.Errorf("failed to seek to beginning of file: %v", err)
-	}
-
-	var cities []city.SpatialCity
-	scanner = bufio.NewScanner(file)
-	bar := pb.Full.Start(lineCount)
-	defer bar.Finish()
-
-	for scanner.Scan() {
 		line := scanner.Text()
+		log.Printf("Processing line: %s", line)
 		fields := strings.Split(line, "\t")
-		if len(fields) < 9 {
+		if len(fields) < 19 {
+			log.Printf("Skipping line with %d fields: %s", len(fields), line)
 			continue
 		}
 
 		lat, err := strconv.ParseFloat(fields[4], 64)
 		if err != nil {
+			log.Printf("Error parsing lat: %v on line: %s\n", err, line)
 			continue
 		}
 		lon, err := strconv.ParseFloat(fields[5], 64)
 		if err != nil {
+			log.Printf("Error parsing lon: %v on line: %s\n", err, line)
 			continue
 		}
 
@@ -62,17 +49,19 @@ func LoadGeoNamesCSV(filepath string) ([]city.SpatialCity, error) {
 			AltNames:  altNames,
 		}
 
-		point := rtreego.Point{lon, lat}
-		rect, _ := rtreego.NewRect(point, []float64{0.00001, 0.00001})
+		rect := &city.Rect{
+			Min: []float64{lon - 0.00001, lat - 0.00001},
+			Max: []float64{lon + 0.00001, lat + 0.00001},
+		}
 		spatialCity := city.SpatialCity{City: cityObj, Rect: rect}
 
 		cities = append(cities, spatialCity)
-		bar.Increment()
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("failed to scan file: %v, %v", filepath, err)
 	}
+	log.Printf("Loaded %d cities from %s\n", len(cities), filepath)
 	return cities, nil
 }
 
@@ -110,8 +99,10 @@ func StreamGeoNamesCSV(filepath string, cityChan chan<- city.SpatialCity, errCha
 			Country:   fields[8],
 		}
 
-		point := rtreego.Point{lon, lat}
-		rect, _ := rtreego.NewRect(point, []float64{0.00001, 0.00001})
+		rect := &city.Rect{
+			Min: []float64{lon - 0.00001, lat - 0.00001},
+			Max: []float64{lon + 0.00001, lat + 0.00001},
+		}
 		spatialCity := city.SpatialCity{City: cityObj, Rect: rect}
 
 		cityChan <- spatialCity

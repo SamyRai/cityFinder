@@ -82,12 +82,12 @@ func min(a, b, c int) int {
 
 // BKTree is a data structure for fast fuzzy string matching
 type BKTree struct {
-	root *bkNode
+	Root *bkNode
 }
 
 type bkNode struct {
-	term     string
-	children map[int]*bkNode
+	Term     string
+	Children map[int]*bkNode
 }
 
 // NewBKTree creates a new BK-tree
@@ -97,16 +97,16 @@ func NewBKTree() *BKTree {
 
 // Add inserts a term into the BK-tree
 func (tree *BKTree) Add(term string) {
-	if tree.root == nil {
-		tree.root = &bkNode{term: term, children: make(map[int]*bkNode)}
+	if tree.Root == nil {
+		tree.Root = &bkNode{Term: term, Children: make(map[int]*bkNode)}
 		return
 	}
-	current := tree.root
+	current := tree.Root
 	for {
-		distance := LevenshteinDistance(term, current.term)
-		child, exists := current.children[distance]
+		distance := LevenshteinDistance(term, current.Term)
+		child, exists := current.Children[distance]
 		if !exists {
-			current.children[distance] = &bkNode{term: term, children: make(map[int]*bkNode)}
+			current.Children[distance] = &bkNode{Term: term, Children: make(map[int]*bkNode)}
 			return
 		}
 		current = child
@@ -115,24 +115,24 @@ func (tree *BKTree) Add(term string) {
 
 // Search returns terms in the BK-tree within the given distance of the query term
 func (tree *BKTree) Search(query string, maxDistance int) []string {
-	if tree.root == nil {
+	if tree.Root == nil {
 		return nil
 	}
 	var results []string
 	var search func(*bkNode)
 	search = func(node *bkNode) {
-		distance := LevenshteinDistance(query, node.term)
+		distance := LevenshteinDistance(query, node.Term)
 		if distance <= maxDistance {
-			results = append(results, node.term)
+			results = append(results, node.Term)
 		}
 		for i := max(1, distance-maxDistance); i <= distance+maxDistance; i++ {
-			child, exists := node.children[i]
+			child, exists := node.Children[i]
 			if exists {
 				search(child)
 			}
 		}
 	}
-	search(tree.root)
+	search(tree.Root)
 	return results
 }
 
