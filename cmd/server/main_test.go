@@ -8,7 +8,7 @@ import (
 	"github.com/SamyRai/cityFinder/cmd/server/routes"
 	"github.com/SamyRai/cityFinder/lib/city"
 	"github.com/SamyRai/cityFinder/lib/config"
-	"github.com/SamyRai/cityFinder/lib/finder/coordinates"
+	"github.com/SamyRai/cityFinder/lib/finder"
 	"github.com/SamyRai/cityFinder/lib/initializer"
 	"github.com/SamyRai/cityFinder/util"
 	"github.com/gofiber/fiber/v2"
@@ -29,10 +29,10 @@ import (
 
 type ServerTestSuite struct {
 	suite.Suite
-	app      *fiber.App
-	s2Finder *coordinates.S2Finder
-	config   *config.Config
-	rootDir  string
+	app    *fiber.App
+	finder *finder.Finder
+	config *config.Config
+	rootDir string
 }
 
 func (suite *ServerTestSuite) SetupSuite() {
@@ -40,19 +40,19 @@ func (suite *ServerTestSuite) SetupSuite() {
 	require.NoError(suite.T(), err)
 	suite.rootDir = rootDir
 
-	cfg, err := config.LoadConfig("config.json")
+	cfg, err := config.LoadConfig("cmd/server/config_test.json")
 	fmt.Printf("cfg: %+v\n", cfg)
 	fmt.Println("rootDir: ", rootDir)
 	require.NoError(suite.T(), err)
 
-	suite.s2Finder, err = initializer.Initialize(cfg)
+	suite.finder, err = initializer.Initialize(cfg)
 	require.NoError(suite.T(), err)
 	suite.app = suite.setupMockAppTestify()
 }
 
 func (suite *ServerTestSuite) setupMockAppTestify() *fiber.App {
 	app := fiber.New()
-	routes.SetupRoutes(app, suite.s2Finder)
+	routes.SetupRoutes(app, suite.finder)
 	return app
 }
 
@@ -144,7 +144,7 @@ func (suite *ServerTestSuite) pickRandomPostalCodes(filepath string, count int) 
 }
 
 func (suite *ServerTestSuite) TestGetNearestCityRandom() {
-	lines, err := suite.pickRandomLines("../../datasets/allCountries.txt", 20)
+	lines, err := suite.pickRandomLines("../../testdata/allCountries.txt", 20)
 	require.NoError(suite.T(), err)
 
 	for _, line := range lines {
@@ -167,7 +167,7 @@ func (suite *ServerTestSuite) TestGetNearestCityRandom() {
 }
 
 func (suite *ServerTestSuite) TestGetCoordinatesByNameRandom() {
-	postalCodes, err := suite.pickRandomPostalCodes("../../datasets/zipCodes.txt", 20)
+	postalCodes, err := suite.pickRandomPostalCodes("../../testdata/zipCodes.txt", 20)
 	require.NoError(suite.T(), err)
 
 	for countryCode, country := range postalCodes {
@@ -194,7 +194,7 @@ func (suite *ServerTestSuite) TestGetCoordinatesByNameRandom() {
 }
 
 func (suite *ServerTestSuite) TestGetCityByPostalCodeRandom() {
-	postalCodes, err := suite.pickRandomPostalCodes("../../datasets/zipCodes.txt", 20)
+	postalCodes, err := suite.pickRandomPostalCodes("../../testdata/zipCodes.txt", 20)
 	require.NoError(suite.T(), err)
 
 	for countryCode, country := range postalCodes {

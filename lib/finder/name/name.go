@@ -2,6 +2,7 @@ package name
 
 import (
 	"encoding/gob"
+	"fmt"
 	"github.com/SamyRai/cityFinder/lib/city"
 	"github.com/SamyRai/cityFinder/util"
 	"github.com/cheggaaa/pb/v3"
@@ -26,6 +27,7 @@ func NewNameFinder() *Finder {
 
 // BuildIndex creates a name index from city data
 func BuildIndex(cities []city.SpatialCity) *Finder {
+	fmt.Printf("Building name index with %d cities\n", len(cities))
 	finder := NewNameFinder()
 	bar := pb.Full.Start(len(cities))
 	for _, spatialCity := range cities {
@@ -84,7 +86,11 @@ func (nf *Finder) SerializeIndex(filepath string) error {
 	defer file.Close()
 
 	encoder := gob.NewEncoder(file)
-	err = encoder.Encode(nf)
+	err = encoder.Encode(nf.InvertedIndex)
+	if err != nil {
+		return err
+	}
+	err = encoder.Encode(nf.BKTree)
 	return err
 }
 
@@ -97,11 +103,15 @@ func DeserializeIndex(filepath string) (*Finder, error) {
 	defer file.Close()
 
 	decoder := gob.NewDecoder(file)
-	var finder Finder
-	err = decoder.Decode(&finder)
+	finder := NewNameFinder()
+	err = decoder.Decode(&finder.InvertedIndex)
+	if err != nil {
+		return nil, err
+	}
+	err = decoder.Decode(&finder.BKTree)
 	if err != nil {
 		return nil, err
 	}
 
-	return &finder, nil
+	return finder, nil
 }

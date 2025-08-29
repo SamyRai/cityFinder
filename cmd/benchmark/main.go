@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"github.com/SamyRai/cityFinder/benchmark"
+	"github.com/SamyRai/cityFinder/lib/config"
 	"github.com/SamyRai/cityFinder/lib/dataLoader"
 	"github.com/SamyRai/cityFinder/lib/finder"
 	"github.com/SamyRai/cityFinder/lib/finder/coordinates"
@@ -36,8 +37,7 @@ var testLocations = []struct {
 
 
 func main() {
-	csvLocation := "datasets/allCountries.csv"
-	postalCodeLocation := "datasets/zipCodes.csv"
+	csvLocation := "datasets/allCountries_dump.txt"
 
 	log.Printf("Loading the CSV data from %s", csvLocation)
 	cities, err := dataLoader.LoadGeoNamesCSV(csvLocation)
@@ -46,17 +46,9 @@ func main() {
 	}
 	log.Printf("Finished loading CSV data")
 
-	log.Printf("Loading the Postal Code data from %s", postalCodeLocation)
-	postalCodes, err := dataLoader.LoadPostalCodes(postalCodeLocation)
-	if err != nil {
-		log.Fatalf("Failed to load Postal Code data: %v", err)
-	}
-	log.Printf("Finished loading Postal Code data")
-
 	// Clean up the datasets after loading
 	defer func() {
 		cities = nil
-		postalCodes = nil
 		runtime.GC()
 	}()
 
@@ -64,12 +56,12 @@ func main() {
 	log.Printf("Initializing finders")
 	var memStatsBefore, memStatsAfter runtime.MemStats
 
-	finders := make(map[string]finder.Finder)
+	finders := make(map[string]*finder.Finder)
 	overallMemoryUsage := make(map[string]uint64)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	initFinder := func(name string, buildFunc func() finder.Finder) {
+	initFinder := func(name string, buildFunc func() *finder.Finder) {
 		defer wg.Done()
 		log.Printf("Initializing %s finder", name)
 		runtime.ReadMemStats(&memStatsBefore)
@@ -82,13 +74,18 @@ func main() {
 		log.Printf("Finished initializing %s finder", name)
 	}
 
-wg.Add(1)
+	wg.Add(1)
 	go initFinder("S2", func() *finder.Finder {
-		f := coordinates.NewS2Index()
-		for _, c := range cities {
-			f.AddCity(c)
+		s2Config := &config.S2{
+			MinLevel: 10,
+			MaxLevel: 15,
+			MaxCells: 8,
 		}
-		return f
+		s2Finder, err := coordinates.BuildIndex(cities, s2Config)
+		if err != nil {
+			log.Fatalf("failed to build S2 index: %v", err)
+		}
+		return &finder.Finder{S2Finder: s2Finder}
 	})
 	wg.Wait()
 
@@ -96,7 +93,7 @@ wg.Add(1)
 
 	log.Printf("Running benchmarks")
 	start := time.Now()
-results := benchmark.BenchmarkFinders(finders, overallMemoryUsage, testLocations)
+	results := benchmark.BenchmarkFinders(finders, overallMemoryUsage, testLocations)
 	duration := time.Since(start)
 	log.Printf("Finished running benchmarks in %v", duration)
 

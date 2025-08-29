@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/SamyRai/cityFinder/lib/city"
-	"github.com/mmcloughlin/geohash"
 )
 
 type GeoHashFinder struct {
@@ -44,12 +43,12 @@ func DeserializeGeoHash(metaPath, citiesPath string) (*GeoHashFinder, error) {
 }
 
 func (f *GeoHashFinder) FindNearestCity(lat, lon float64) (*city.City, float64, error) {
-	precision := uint(12)
-	hash := geohash.EncodeWithPrecision(lat, lon, precision)
+	precision := 12
+	hash := Encode(lat, lon, precision)
 	var closest *city.City
 	minDist := math.MaxFloat64
 
-	neighbors := geohash.Neighbors(hash)
+	neighbors := Neighbors(hash)
 	searchHashes := append(neighbors, hash)
 
 	for _, h := range searchHashes {

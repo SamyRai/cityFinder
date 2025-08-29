@@ -13,6 +13,15 @@ import (
 // ErrNoResults is returned when no results are found
 var ErrNoResults = errors.New("no results found")
 
+// SerializableSpatialCity is a custom type for serializing city.SpatialCity
+type SerializableSpatialCity struct {
+	Latitude  float64
+	Longitude float64
+	Name      string
+	Country   string
+	Rect      *city.Rect
+}
+
 // CityReader provides random access to a gob-encoded file of cities.
 type CityReader struct {
 	file    *os.File
@@ -68,16 +77,12 @@ func FromSpatialCity(sc city.SpatialCity) SerializableSpatialCity {
 		Longitude: sc.Longitude,
 		Name:      sc.Name,
 		Country:   sc.Country,
-		Rect:      FromRTreeRect(sc.Rect),
+		Rect:      sc.Rect,
 	}
 }
 
 // ToSpatialCity converts SerializableSpatialCity to city.SpatialCity
 func ToSpatialCity(ssc SerializableSpatialCity) (city.SpatialCity, error) {
-	rect, err := ssc.Rect.ToRTreeRect()
-	if err != nil {
-		return city.SpatialCity{}, err
-	}
 	return city.SpatialCity{
 		City: city.City{
 			Latitude:  ssc.Latitude,
@@ -85,6 +90,6 @@ func ToSpatialCity(ssc SerializableSpatialCity) (city.SpatialCity, error) {
 			Name:      ssc.Name,
 			Country:   ssc.Country,
 		},
-		Rect: rect,
+		Rect: ssc.Rect,
 	}, nil
 }
