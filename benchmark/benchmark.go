@@ -47,7 +47,7 @@ func MeasureTimeAndMemorySlice(wg *sync.WaitGroup, resultsChan chan<- Result, la
 	resultsChan <- Result{Label: label, Duration: duration, MemoryUsage: memoryUsage, NearestCity: nearestCity}
 }
 
-func BenchmarkFinders(finders map[string]finder.Finder, overallMemoryUsage map[string]uint64, testLocations []struct {
+func BenchmarkFinders(finders map[string]*finder.Finder, overallMemoryUsage map[string]uint64, testLocations []struct {
 	Lat, Lon float64
 	Expected string
 }) []Result {

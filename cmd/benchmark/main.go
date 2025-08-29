@@ -34,9 +34,6 @@ var testLocations = []struct {
 	{54.5378, 52.7985, "Bugulma"},
 }
 
-var testPostalCodes = []string{
-	"10001", "90210", "60601",
-}
 
 func main() {
 	csvLocation := "datasets/allCountries.csv"
@@ -85,18 +82,21 @@ func main() {
 		log.Printf("Finished initializing %s finder", name)
 	}
 
-	wg.Add(4)
-	go initFinder("R-tree", func() finder.Finder { return coordinates.BuildRTree(cities, postalCodes) })
-	go initFinder("Geohash", func() finder.Finder { return coordinates.BuildGeoHashIndex(cities, 12, postalCodes) })
-	go initFinder("S2", func() finder.Finder { return coordinates.BuildS2Index(cities, postalCodes) })
-	go initFinder("k-d Tree", func() finder.Finder { return coordinates.BuildKDTree(cities, postalCodes) })
+wg.Add(1)
+	go initFinder("S2", func() *finder.Finder {
+		f := coordinates.NewS2Index()
+		for _, c := range cities {
+			f.AddCity(c)
+		}
+		return f
+	})
 	wg.Wait()
 
 	log.Printf("Finished initializing all finders")
 
 	log.Printf("Running benchmarks")
 	start := time.Now()
-	results := benchmark.BenchmarkFinders(finders, overallMemoryUsage, testLocations, testPostalCodes)
+results := benchmark.BenchmarkFinders(finders, overallMemoryUsage, testLocations)
 	duration := time.Since(start)
 	log.Printf("Finished running benchmarks in %v", duration)
 

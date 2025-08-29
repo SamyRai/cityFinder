@@ -47,7 +47,7 @@ func BuildIndex(cities []city.SpatialCity, config *config.S2) (*S2Finder, error)
 }
 
 // FindNearestCity finds the nearest city to the given latitude and longitude
-func (f *S2Finder) NearestPlace(lat, lon float64) *city.City {
+func (f *S2Finder) NearestPlace(lat, lon float64) (*city.City, float64, error)
 	point := s2.PointFromLatLng(s2.LatLngFromDegrees(lat, lon))
 	initialRadius := 1e-5 // Start with a small radius
 	maxRadius := 0.1      // Set a maximum radius to avoid infinite loops

@@ -55,6 +55,10 @@ func (f *Finder) FindCityByName(name, countryCode string) *city.City {
 }
 
 // FindNearestCity wraps the S2Finder method
-func (f *Finder) FindNearestCity(lat, lon float64) *city.City {
-	return f.S2Finder.NearestPlace(lat, lon)
+func (f *Finder) FindNearestCity(lat, lon float64) (*city.City, float64, error) {
+	c := f.S2Finder.NearestPlace(lat, lon)
+	if c == nil {
+		return nil, 0, nil
+	}
+	return c, 0, nil
 }

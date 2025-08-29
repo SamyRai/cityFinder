@@ -1,11 +1,11 @@
-package finder
+package coordinates
 
 import (
 	"encoding/gob"
 	"math"
 	"os"
 
-	"github.com/SamyRai/cityFinder/city"
+	"github.com/SamyRai/cityFinder/lib/city"
 	"github.com/mmcloughlin/geohash"
 )
 

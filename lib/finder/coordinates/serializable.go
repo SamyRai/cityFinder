@@ -1,15 +1,17 @@
 package coordinates
 
 import (
-	"github.com/SamyRai/cityFinder/lib/city"
-)
-
-import (
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/SamyRai/cityFinder/lib/city"
 )
+
+// ErrNoResults is returned when no results are found
+var ErrNoResults = errors.New("no results found")
 
 // CityReader provides random access to a gob-encoded file of cities.
 type CityReader struct {

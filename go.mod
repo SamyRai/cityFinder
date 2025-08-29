@@ -7,6 +7,7 @@ toolchain go1.24.3
 require (
 	github.com/cheggaaa/pb/v3 v3.1.7
 	github.com/dhconnelly/rtreego v1.2.0
+	github.com/fatih/color v1.18.0
 	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/golang/geo v0.0.0-20250825151631-54d70cc7cb31
 	github.com/kyroy/kdtree v0.0.0-20200419114247-70830f883f1d
@@ -18,7 +19,6 @@ require (
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/fatih/color v1.18.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/kyroy/priority-queue v0.0.0-20180327160706-6e21825e7e0c // indirect

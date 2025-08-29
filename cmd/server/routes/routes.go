@@ -31,7 +31,10 @@ func SetupRoutes(app *fiber.App, mainFinder *finder.Finder) {
 			return c.Status(fiber.StatusBadRequest).SendString("Longitude must be between -180 and 180")
 		}
 
-		city := mainFinder.FindNearestCity(lat, lon)
+		city, _, err := mainFinder.FindNearestCity(lat, lon)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).SendString(fmt.Sprintf("Error finding city: %v", err))
+		}
 		if city == nil {
 			return c.Status(fiber.StatusNotFound).SendString(fmt.Sprintf("City not found for lat: %f, lon: %f", lat, lon))
 		}

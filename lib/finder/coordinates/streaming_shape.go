@@ -1,4 +1,4 @@
-package finder
+package coordinates
 
 import (
 	"encoding/gob"
