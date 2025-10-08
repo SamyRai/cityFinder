@@ -46,12 +46,15 @@ func LoadConfig(configPath string) (*Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to open config file: %v", err)
 		}
-		defer file.Close()
-
 		decoder := json.NewDecoder(file)
-		err = decoder.Decode(cfg)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode config file: %v", err)
+		decodeErr := decoder.Decode(cfg)
+		closeErr := file.Close()
+
+		if decodeErr != nil {
+			return nil, fmt.Errorf("failed to decode config file: %v", decodeErr)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to close config file: %v", closeErr)
 		}
 
 		cfg.DatasetsFolder = filepath.Join(rootDir, cfg.DatasetsFolder)
@@ -62,10 +65,3 @@ func LoadConfig(configPath string) (*Config, error) {
 	return nil, fmt.Errorf("no config file provided")
 }
 
-func getEnv(key string, defaultValue string) string {
-	value, exists := os.LookupEnv(key)
-	if !exists {
-		return defaultValue
-	}
-	return value
-}

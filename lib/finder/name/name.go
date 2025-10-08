@@ -83,15 +83,17 @@ func (nf *Finder) SerializeIndex(filepath string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 
 	encoder := gob.NewEncoder(file)
-	err = encoder.Encode(nf.InvertedIndex)
-	if err != nil {
+	if err := encoder.Encode(nf.InvertedIndex); err != nil {
+		_ = file.Close()
 		return err
 	}
-	err = encoder.Encode(nf.BKTree)
-	return err
+	if err := encoder.Encode(nf.BKTree); err != nil {
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
 }
 
 // DeserializeIndex loads the name index from a file
@@ -100,16 +102,19 @@ func DeserializeIndex(filepath string) (*Finder, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
 
 	decoder := gob.NewDecoder(file)
 	finder := NewNameFinder()
-	err = decoder.Decode(&finder.InvertedIndex)
-	if err != nil {
+	if err := decoder.Decode(&finder.InvertedIndex); err != nil {
+		_ = file.Close()
 		return nil, err
 	}
-	err = decoder.Decode(&finder.BKTree)
-	if err != nil {
+	if err := decoder.Decode(&finder.BKTree); err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+
+	if err := file.Close(); err != nil {
 		return nil, err
 	}
 

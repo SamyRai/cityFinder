@@ -1,8 +1,6 @@
 module github.com/SamyRai/cityFinder
 
-go 1.23.0
-
-toolchain go1.24.3
+go 1.25
 
 require (
 	github.com/cheggaaa/pb/v3 v3.1.7

@@ -58,7 +58,9 @@ func TestSerialization(t *testing.T) {
 	// Create a temporary file for the index
 	tmpfile, err := os.CreateTemp("", "s2index_test.*.gob")
 	assert.NoError(t, err)
-	defer os.Remove(tmpfile.Name())
+	defer func() {
+		_ = os.Remove(tmpfile.Name())
+	}()
 
 	// Build the initial finder and serialize it
 	cfg := &config.S2{}

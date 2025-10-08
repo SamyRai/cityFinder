@@ -83,16 +83,24 @@ func downloadFile(filepath string, url string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 
 	resp, err := http.Get(url)
 	if err != nil {
+		_ = out.Close()
 		return err
 	}
-	defer resp.Body.Close()
 
-	_, err = io.Copy(out, resp.Body)
-	return err
+	_, copyErr := io.Copy(out, resp.Body)
+	bodyCloseErr := resp.Body.Close()
+	outCloseErr := out.Close()
+
+	if copyErr != nil {
+		return copyErr
+	}
+	if bodyCloseErr != nil {
+		return bodyCloseErr
+	}
+	return outCloseErr
 }
 
 // unzipAndRename unzips a file and renames it to the specified new file name
@@ -101,7 +109,6 @@ func unzipAndRename(src string, dest string, newFileName string) error {
 	if err != nil {
 		return err
 	}
-	defer r.Close()
 
 	for _, f := range r.File {
 		fpath := filepath.Join(dest, f.Name)
@@ -126,17 +133,17 @@ func unzipAndRename(src string, dest string, newFileName string) error {
 		if err != nil {
 			return err
 		}
-		_, err = io.Copy(outFile, rc)
-		err = outFile.Close()
-		if err != nil {
-			return fmt.Errorf("failed to close file: %v", err)
+		if _, err = io.Copy(outFile, rc); err != nil {
+			return err
 		}
-		err = rc.Close()
-		if err != nil {
-			return fmt.Errorf("failed to close file: %v", err)
+		if err := outFile.Close(); err != nil {
+			return fmt.Errorf("failed to close output file: %v", err)
+		}
+		if err := rc.Close(); err != nil {
+			return fmt.Errorf("failed to close zip reader: %v", err)
 		}
 	}
-	return nil
+	return r.Close()
 }
 
 // ensureFinders ensures that the indexes are built and serialized

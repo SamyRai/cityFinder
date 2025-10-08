@@ -15,10 +15,8 @@ func LoadGeoNamesCSV(filepath string) ([]city.SpatialCity, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %v", err)
 	}
-	defer file.Close()
-
-	var cities []city.SpatialCity
 	scanner := bufio.NewScanner(file)
+	var cities []city.SpatialCity
 	for scanner.Scan() {
 		line := scanner.Text()
 		log.Printf("Processing line: %s", line)
@@ -59,8 +57,13 @@ func LoadGeoNamesCSV(filepath string) ([]city.SpatialCity, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
+		_ = file.Close()
 		return nil, fmt.Errorf("failed to scan file: %v, %v", filepath, err)
 	}
+	if err := file.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close file: %v", err)
+	}
+
 	log.Printf("Loaded %d cities from %s\n", len(cities), filepath)
 	return cities, nil
 }
@@ -73,7 +76,6 @@ func StreamGeoNamesCSV(filepath string, cityChan chan<- city.SpatialCity, errCha
 		close(errChan)
 		return
 	}
-	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -109,6 +111,9 @@ func StreamGeoNamesCSV(filepath string, cityChan chan<- city.SpatialCity, errCha
 	}
 
 	if err := scanner.Err(); err != nil {
+		errChan <- err
+	}
+	if err := file.Close(); err != nil {
 		errChan <- err
 	}
 

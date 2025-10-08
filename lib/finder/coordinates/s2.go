@@ -84,10 +84,15 @@ func (f *S2Finder) SerializeIndex(filepath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create index file: %w", err)
 	}
-	defer file.Close()
 
 	encoder := gob.NewEncoder(file)
-	return encoder.Encode(serializable)
+	encodeErr := encoder.Encode(serializable)
+	closeErr := file.Close()
+
+	if encodeErr != nil {
+		return encodeErr
+	}
+	return closeErr
 }
 
 // DeserializeIndex loads the finder's data from a file.
@@ -96,12 +101,17 @@ func DeserializeIndex(filepath string) (*S2Finder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error opening file: %w", err)
 	}
-	defer file.Close()
 
 	var serializable SerializableS2Finder
 	decoder := gob.NewDecoder(file)
-	if err := decoder.Decode(&serializable); err != nil {
-		return nil, fmt.Errorf("error decoding file: %w", err)
+	decodeErr := decoder.Decode(&serializable)
+	closeErr := file.Close()
+
+	if decodeErr != nil {
+		return nil, fmt.Errorf("error decoding file: %w", decodeErr)
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("error closing file: %w", closeErr)
 	}
 
 	points := make(s2.PointVector, len(serializable.Cities))

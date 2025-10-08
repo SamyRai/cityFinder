@@ -110,13 +110,12 @@ func saveResultsToCSV(results []benchmark.Result, filename string) {
 	if err != nil {
 		log.Fatalf("Failed to create CSV file: %v", err)
 	}
-	defer file.Close()
-
 	writer := csv.NewWriter(file)
-	defer writer.Flush()
 
 	header := []string{"City", "Finder", "Time (ns)", "Memory (B)", "Nearest City", "Latitude", "Longitude"}
-	writer.Write(header)
+	if err := writer.Write(header); err != nil {
+		log.Printf("Warning: failed to write CSV header: %v", err)
+	}
 
 	for _, result := range results {
 		city := extractCityName(result.Label)
@@ -133,7 +132,13 @@ func saveResultsToCSV(results []benchmark.Result, filename string) {
 		}
 
 		record := []string{city, finderName, fmt.Sprintf("%d", time), fmt.Sprintf("%d", memory), nearestCityName, latitude, longitude}
-		writer.Write(record)
+		if err := writer.Write(record); err != nil {
+			log.Printf("Warning: failed to write CSV record: %v", err)
+		}
+	}
+	writer.Flush()
+	if err := file.Close(); err != nil {
+		log.Printf("Warning: failed to close CSV file: %v", err)
 	}
 }
 

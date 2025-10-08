@@ -20,7 +20,9 @@ func TestFinder_SerializeDeserialize(t *testing.T) {
 	// Serialize the finder to a temporary file
 	tmpfile, err := os.CreateTemp("", "test_name_finder_*.gob")
 	assert.NoError(t, err)
-	defer os.Remove(tmpfile.Name())
+	defer func() {
+		_ = os.Remove(tmpfile.Name())
+	}()
 
 	err = finder.SerializeIndex(tmpfile.Name())
 	assert.NoError(t, err)
