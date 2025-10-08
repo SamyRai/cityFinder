@@ -3,17 +3,16 @@ package main
 import (
 	"encoding/csv"
 	"fmt"
-	"github.com/SamyRai/cityFinder/benchmark"
-	"github.com/SamyRai/cityFinder/lib/config"
-	"github.com/SamyRai/cityFinder/lib/dataLoader"
-	"github.com/SamyRai/cityFinder/lib/finder"
-	"github.com/SamyRai/cityFinder/lib/finder/coordinates"
 	"log"
 	"os"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/SamyRai/cityFinder/benchmark"
+	"github.com/SamyRai/cityFinder/lib/config"
+	"github.com/SamyRai/cityFinder/lib/finder"
+	"github.com/SamyRai/cityFinder/lib/initializer"
 )
 
 var testLocations = []struct {
@@ -35,61 +34,32 @@ var testLocations = []struct {
 	{54.5378, 52.7985, "Bugulma"},
 }
 
-
 func main() {
-	csvLocation := "datasets/allCountries_dump.txt"
-
-	log.Printf("Loading the CSV data from %s", csvLocation)
-	cities, err := dataLoader.LoadGeoNamesCSV(csvLocation)
-	if err != nil {
-		log.Fatalf("Failed to load GeoNames data from CSV: %v", err)
+	log.Println("Benchmark started.")
+	configPath, exists := os.LookupEnv("CONFIG_PATH")
+	if !exists {
+		configPath = "config.json"
 	}
-	log.Printf("Finished loading CSV data")
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	mainFinder, err := initializer.Initialize(cfg)
+	if err != nil {
+		log.Fatalf("Initialization failed: %v", err)
+	}
 
 	// Clean up the datasets after loading
 	defer func() {
-		cities = nil
 		runtime.GC()
 	}()
 
-	// Initialize all finders and measure their memory consumption
-	log.Printf("Initializing finders")
-	var memStatsBefore, memStatsAfter runtime.MemStats
-
-	finders := make(map[string]*finder.Finder)
-	overallMemoryUsage := make(map[string]uint64)
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-
-	initFinder := func(name string, buildFunc func() *finder.Finder) {
-		defer wg.Done()
-		log.Printf("Initializing %s finder", name)
-		runtime.ReadMemStats(&memStatsBefore)
-		f := buildFunc()
-		runtime.ReadMemStats(&memStatsAfter)
-		mu.Lock()
-		finders[name] = f
-		overallMemoryUsage[name] = memStatsAfter.Alloc - memStatsBefore.Alloc
-		mu.Unlock()
-		log.Printf("Finished initializing %s finder", name)
+	finders := map[string]*finder.Finder{
+		"S2": mainFinder,
 	}
-
-	wg.Add(1)
-	go initFinder("S2", func() *finder.Finder {
-		s2Config := &config.S2{
-			MinLevel: 10,
-			MaxLevel: 15,
-			MaxCells: 8,
-		}
-		s2Finder, err := coordinates.BuildIndex(cities, s2Config)
-		if err != nil {
-			log.Fatalf("failed to build S2 index: %v", err)
-		}
-		return &finder.Finder{S2Finder: s2Finder}
-	})
-	wg.Wait()
-
-	log.Printf("Finished initializing all finders")
+	overallMemoryUsage := make(map[string]uint64)
 
 	log.Printf("Running benchmarks")
 	start := time.Now()
@@ -101,7 +71,7 @@ func main() {
 	printResultsTable(results, overallMemoryUsage)
 
 	log.Printf("Saving results to CSV")
-	saveResultsToCSV(results, overallMemoryUsage, "results.csv")
+	saveResultsToCSV(results, "results.csv")
 	log.Printf("Finished saving results to CSV")
 }
 
@@ -112,28 +82,15 @@ func printResultsTable(results []benchmark.Result, overallMemoryUsage map[string
 		cityResults[city] = append(cityResults[city], result)
 	}
 
-	header := fmt.Sprintf("%-40s %-20s %-15s %-15s %-20s %-15s %-15s", "City", "Finder", "Time (ms)", "Memory (KB)", "Nearest City", "Latitude", "Longitude")
+	header := fmt.Sprintf("%-40s %-20s %-15s %-15s %-20s %-15s %-15s", "City", "Finder", "Time (ns)", "Memory (B)", "Nearest City", "Latitude", "Longitude")
 	fmt.Println(header)
 	fmt.Println(strings.Repeat("-", len(header)))
 
-	for city, results := range cityResults {
-		var fastestResult *benchmark.Result
-		var lowestMemoryResult *benchmark.Result
-		for i, result := range results {
-			if fastestResult == nil || result.Duration < fastestResult.Duration {
-				fastestResult = &results[i]
-			}
-			if lowestMemoryResult == nil || result.MemoryUsage < lowestMemoryResult.MemoryUsage {
-				lowestMemoryResult = &results[i]
-			}
-		}
-
-		for _, result := range results {
-			isFastest := result == *fastestResult
-			isLowestMemory := result == *lowestMemoryResult
+	for city, cityRes := range cityResults {
+		for _, result := range cityRes {
 			finderName := extractFinderName(result.Label)
-			time := result.Duration.Milliseconds()
-			memory := result.MemoryUsage / 1024
+			time := result.Duration.Nanoseconds()
+			memory := result.MemoryUsage
 			nearestCityName := "N/A"
 			latitude := "N/A"
 			longitude := "N/A"
@@ -143,31 +100,12 @@ func printResultsTable(results []benchmark.Result, overallMemoryUsage map[string
 				longitude = fmt.Sprintf("%f", result.NearestCity.Longitude)
 			}
 
-			timeStr := fmt.Sprintf("%d", time)
-			if isFastest {
-				timeStr += " <- Fastest"
-			}
-
-			memoryStr := fmt.Sprintf("%d", memory)
-			if isLowestMemory {
-				memoryStr += " <- Lowest"
-			}
-
-			fmt.Printf("%-40s %-20s %-15s %-15s %-20s %-15s %-15s\n", city, finderName, timeStr, memoryStr, nearestCityName, latitude, longitude)
+			fmt.Printf("%-40s %-20s %-15d %-15d %-20s %-15s %-15s\n", city, finderName, time, memory, nearestCityName, latitude, longitude)
 		}
-	}
-
-	fmt.Println("\nOverall Memory Consumption:")
-	header = fmt.Sprintf("%-20s %-15s", "Finder", "Memory (KB)")
-	fmt.Println(header)
-	fmt.Println(strings.Repeat("-", len(header)))
-
-	for finderName, memory := range overallMemoryUsage {
-		fmt.Printf("%-20s %-15d\n", finderName, memory/1024)
 	}
 }
 
-func saveResultsToCSV(results []benchmark.Result, overallMemoryUsage map[string]uint64, filename string) {
+func saveResultsToCSV(results []benchmark.Result, filename string) {
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatalf("Failed to create CSV file: %v", err)
@@ -177,33 +115,25 @@ func saveResultsToCSV(results []benchmark.Result, overallMemoryUsage map[string]
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	header := []string{"City", "Finder", "Time", "Memory", "Nearest City", "Latitude", "Longitude", "Expected Latitude", "Expected Longitude"}
+	header := []string{"City", "Finder", "Time (ns)", "Memory (B)", "Nearest City", "Latitude", "Longitude"}
 	writer.Write(header)
 
-	cityResults := make(map[string][]benchmark.Result)
 	for _, result := range results {
 		city := extractCityName(result.Label)
-		cityResults[city] = append(cityResults[city], result)
-	}
-
-	for city, results := range cityResults {
-		expectedLat, expectedLon := getExpectedCoordinates(city)
-		for _, result := range results {
-			finderName := extractFinderName(result.Label)
-			time := result.Duration.Milliseconds()
-			memory := result.MemoryUsage / 1024
-			nearestCityName := "N/A"
-			latitude := "N/A"
-			longitude := "N/A"
-			if result.NearestCity != nil {
-				nearestCityName = result.NearestCity.Name
-				latitude = fmt.Sprintf("%f", result.NearestCity.Latitude)
-				longitude = fmt.Sprintf("%f", result.NearestCity.Longitude)
-			}
-
-			record := []string{city, finderName, fmt.Sprintf("%d", time), fmt.Sprintf("%d", memory), nearestCityName, latitude, longitude, fmt.Sprintf("%f", expectedLat), fmt.Sprintf("%f", expectedLon)}
-			writer.Write(record)
+		finderName := extractFinderName(result.Label)
+		time := result.Duration.Nanoseconds()
+		memory := result.MemoryUsage
+		nearestCityName := "N/A"
+		latitude := "N/A"
+		longitude := "N/A"
+		if result.NearestCity != nil {
+			nearestCityName = result.NearestCity.Name
+			latitude = fmt.Sprintf("%f", result.NearestCity.Latitude)
+			longitude = fmt.Sprintf("%f", result.NearestCity.Longitude)
 		}
+
+		record := []string{city, finderName, fmt.Sprintf("%d", time), fmt.Sprintf("%d", memory), nearestCityName, latitude, longitude}
+		writer.Write(record)
 	}
 }
 
@@ -221,13 +151,4 @@ func extractFinderName(label string) string {
 		return strings.Split(parts[1], " for ")[0]
 	}
 	return ""
-}
-
-func getExpectedCoordinates(cityName string) (float64, float64) {
-	for _, loc := range testLocations {
-		if loc.Expected == cityName {
-			return loc.Lat, loc.Lon
-		}
-	}
-	return 0.0, 0.0
 }

@@ -6,7 +6,6 @@ toolchain go1.24.3
 
 require (
 	github.com/cheggaaa/pb/v3 v3.1.7
-	github.com/dhconnelly/rtreego v1.2.0
 	github.com/fatih/color v1.18.0
 	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/golang/geo v0.0.0-20250825151631-54d70cc7cb31
