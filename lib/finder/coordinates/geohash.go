@@ -24,10 +24,12 @@ func DeserializeGeoHash(metaPath, citiesPath string) (*GeoHashFinder, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer metaFile.Close()
-
 	var meta GeoHashMeta
 	if err := gob.NewDecoder(metaFile).Decode(&meta); err != nil {
+		_ = metaFile.Close()
+		return nil, err
+	}
+	if err := metaFile.Close(); err != nil {
 		return nil, err
 	}
 

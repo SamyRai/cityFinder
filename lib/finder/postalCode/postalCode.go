@@ -81,11 +81,15 @@ func (pcf *Finder) SerializeIndex(filepath string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 
 	encoder := gob.NewEncoder(file)
-	err = encoder.Encode(pcf)
-	return err
+	encodeErr := encoder.Encode(pcf)
+	closeErr := file.Close()
+
+	if encodeErr != nil {
+		return encodeErr
+	}
+	return closeErr
 }
 
 // DeserializeIndex loads the postal code index from a file
@@ -94,13 +98,17 @@ func DeserializeIndex(filepath string) (*Finder, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
 
 	decoder := gob.NewDecoder(file)
 	var finder Finder
-	err = decoder.Decode(&finder)
-	if err != nil {
-		return nil, err
+	decodeErr := decoder.Decode(&finder)
+	closeErr := file.Close()
+
+	if decodeErr != nil {
+		return nil, decodeErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
 	}
 
 	return &finder, nil

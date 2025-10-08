@@ -17,11 +17,11 @@ type Finder struct {
 }
 
 // NewFinder creates a new Finder instance
-func NewFinder(cities []city.SpatialCity, s2Config *config.S2, postalCodes map[string]map[string]dataLoader.PostalCodeEntry) *Finder {
+func NewFinder(cities []city.SpatialCity, s2Config *config.S2, postalCodes map[string]map[string]dataLoader.PostalCodeEntry) (*Finder, error) {
 
 	s2Finder, err := coordinates.NewS2Finder(s2Config)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	nameFinder := name.NewNameFinder()
@@ -41,7 +41,7 @@ func NewFinder(cities []city.SpatialCity, s2Config *config.S2, postalCodes map[s
 		S2Finder:         s2Finder,
 		NameFinder:       nameFinder,
 		PostalCodeFinder: postalCodeFinder,
-	}
+	}, nil
 }
 
 // FindCityByPostalCode wraps the PostalCodeFinder method

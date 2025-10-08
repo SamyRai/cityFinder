@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -31,7 +32,6 @@ type ServerTestSuite struct {
 	suite.Suite
 	app    *fiber.App
 	finder *finder.Finder
-	config *config.Config
 	rootDir string
 }
 
@@ -44,6 +44,11 @@ func (suite *ServerTestSuite) SetupSuite() {
 	fmt.Printf("cfg: %+v\n", cfg)
 	fmt.Println("rootDir: ", rootDir)
 	require.NoError(suite.T(), err)
+
+	// Clean up old index files to ensure a fresh build for tests
+	_ = os.Remove(filepath.Join(cfg.DatasetsFolder, cfg.S2.IndexFile))
+	_ = os.Remove(filepath.Join(cfg.DatasetsFolder, cfg.NameIndexFile))
+	_ = os.Remove(filepath.Join(cfg.DatasetsFolder, cfg.PostalCodeIndexFile))
 
 	suite.finder, err = initializer.Initialize(cfg)
 	require.NoError(suite.T(), err)
@@ -61,16 +66,20 @@ func (suite *ServerTestSuite) pickRandomLines(filepath string, count int) ([]str
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
-
-	var lines []string
 	scanner := bufio.NewScanner(file)
+	var lines []string
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
 	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, err
+	scanErr := scanner.Err()
+	closeErr := file.Close()
+
+	if scanErr != nil {
+		return nil, scanErr
+	}
+	if closeErr != nil {
+		return nil, closeErr
 	}
 
 	rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -114,12 +123,15 @@ func (suite *ServerTestSuite) pickRandomPostalCodes(filepath string, count int) 
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
 
 	reader := csv.NewReader(file)
 	reader.Comma = '\t'
 	records, err := reader.ReadAll()
 	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	if err := file.Close(); err != nil {
 		return nil, err
 	}
 
