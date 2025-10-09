@@ -58,18 +58,18 @@ func Logger() fiber.Handler {
 		form, _ := c.MultipartForm()
 
 		// Convert query parameters to a string
-		queryParams, err := json.Marshal(c.Queries())
-		if err != nil {
-			log.Printf("Error marshalling query params: %v", err)
+		queryParams, queryErr := json.Marshal(c.Queries())
+		if queryErr != nil {
+			log.Printf("Error marshalling query params: %v", queryErr)
 		}
 
 		// Get the request body
 		body := fmt.Sprintf(`"%s"`, c.Body())
 
 		formData := c.Locals("formData")
-		formDataString, err := json.Marshal(formData)
-		if err != nil {
-			log.Printf("Error marshalling form data: %v", err)
+		formDataString, formErr := json.Marshal(formData)
+		if formErr != nil {
+			log.Printf("Error marshalling form data: %v", formErr)
 		}
 
 		// Log output

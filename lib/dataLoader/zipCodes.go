@@ -26,12 +26,14 @@ func LoadPostalCodes(filepath string) (map[string]map[string]PostalCodeEntry, er
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
-
 	reader := csv.NewReader(file)
 	reader.Comma = '\t'
 	records, err := reader.ReadAll()
 	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	if err := file.Close(); err != nil {
 		return nil, err
 	}
 

@@ -36,7 +36,9 @@ func (s *StreamingPointVector) Edge(i int) s2.Edge {
 	if i < 0 || i >= len(s.offsets) {
 		return s2.Edge{}
 	}
-	s.file.Seek(s.offsets[i], 0)
+	if _, err := s.file.Seek(s.offsets[i], 0); err != nil {
+		return s2.Edge{}
+	}
 	var p s2.Point
 	decoder := gob.NewDecoder(s.file)
 	if err := decoder.Decode(&p); err != nil {
