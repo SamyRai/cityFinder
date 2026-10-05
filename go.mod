@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/gofiber/fiber/v2 v2.52.15
 	github.com/golang/geo v0.0.0-20260526120156-e21b7802b0ee
-	github.com/klauspost/compress v1.18.7
+	github.com/klauspost/compress v1.20.1
 	github.com/stretchr/testify v1.11.1
 )
 
